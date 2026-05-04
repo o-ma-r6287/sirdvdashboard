@@ -390,16 +390,23 @@ def make_plot(
     peak_val = float(df["Infected"].max())
 
     fig.add_annotation(
-        x=peak_idx,
-        y=peak_val,
-        text="Peak Infection",
-        showarrow=True,
-        arrowhead=2,
-        ax=35,
-        ay=-45,
-        bgcolor="rgba(255,255,255,0.85)",
-        bordercolor="#d62728",
-        borderwidth=1,
+    x=peak_idx,
+    y=peak_val,
+    text="<b>Peak Infection</b>",
+    showarrow=True,
+    arrowhead=2,
+    ax=45,
+    ay=-55,
+    font=dict(
+        size=14,
+        color="black"
+    ),
+    bgcolor="white",
+    bordercolor="#d62728",
+    borderwidth=2,
+    borderpad=6,
+    opacity=0.95,
+)
     )
 
     if icu_capacity is not None and y_axis_title == "Population":
