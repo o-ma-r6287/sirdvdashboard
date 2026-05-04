@@ -849,4 +849,4 @@ with tabs[3]:
 # FOOTER
 # ---------------------------------------------------
 st.markdown("---")
-st.caption("Built with Streamlit | Epidemiological Decision Dashboard")st.caption("Built with Streamlit | Epidemiological Decision Dashboard")
+st.caption("Built with Streamlit | Epidemiological Decision Dashboard")
