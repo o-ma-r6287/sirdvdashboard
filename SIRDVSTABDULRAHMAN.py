@@ -439,6 +439,82 @@ def executive_brief(metrics, phase, recommendation, grade):
     )
 
 
+def build_comparison_metrics(df, beta, gamma, population, hospitalization_rate, icu_capacity):
+    metrics = metrics_from_df(df, beta, gamma, population, hospitalization_rate)
+
+    peak_deaths = float(df["Dead"].max())
+    final_deaths = float(df["Dead"].iloc[-1])
+    cumulative_infected = metrics["Cumulative Cases"]
+    icu_overflow = metrics["Estimated Peak Hospitalizations"] > icu_capacity
+    icu_cross_day = first_icu_crossing_day(df, hospitalization_rate, icu_capacity)
+
+    return {
+        "Peak Infected": metrics["Peak Infected"],
+        "Peak Infected Day": metrics["Day of Peak"],
+        "Total/Cumulative Infected": cumulative_infected,
+        "Peak Deaths": peak_deaths,
+        "Final Deaths": final_deaths,
+        "ICU Overflow": "Yes" if icu_overflow else "No",
+        "First ICU Overflow Day": icu_cross_day if icu_cross_day is not None else "N/A",
+    }
+
+
+def calculate_policy_effectiveness_score(metrics_a, metrics_b):
+    score = 50
+
+    if metrics_b["Peak Infected"] < metrics_a["Peak Infected"]:
+        score += 15
+
+    if metrics_b["Total/Cumulative Infected"] < metrics_a["Total/Cumulative Infected"]:
+        score += 15
+
+    if metrics_a["ICU Overflow"] == "Yes" and metrics_b["ICU Overflow"] == "No":
+        score += 20
+    elif metrics_b["ICU Overflow"] == "Yes":
+        score -= 10
+
+    if metrics_b["Final Deaths"] < metrics_a["Final Deaths"]:
+        score += 15
+
+    return max(0, min(100, score))
+
+
+def generate_comparison_insight(metrics_a, metrics_b):
+    peak_difference = metrics_a["Peak Infected"] - metrics_b["Peak Infected"]
+    peak_percent_change = 0
+
+    if metrics_a["Peak Infected"] > 0:
+        peak_percent_change = (peak_difference / metrics_a["Peak Infected"]) * 100
+
+    peak_day_change = metrics_b["Peak Infected Day"] - metrics_a["Peak Infected Day"]
+
+    if peak_difference > 0 and metrics_a["ICU Overflow"] == "Yes" and metrics_b["ICU Overflow"] == "No":
+        return (
+            f"Scenario B reduced peak infections by {peak_percent_change:.1f}% "
+            f"and prevented ICU overflow."
+        )
+
+    if peak_difference > 0:
+        return (
+            f"Scenario B reduced peak infections by {peak_percent_change:.1f}% "
+            f"compared with Scenario A."
+        )
+
+    if peak_day_change > 0:
+        return (
+            f"Scenario B delayed the peak by {peak_day_change} days, "
+            f"but ICU overflow status was {metrics_b['ICU Overflow']}."
+        )
+
+    if peak_difference < 0:
+        return (
+            "Scenario B produced a higher infection peak than Scenario A. "
+            "This may indicate a weaker or delayed intervention strategy."
+        )
+
+    return "Both scenarios produced similar peak infection outcomes."
+
+
 # ---------------------------------------------------
 # CHARTING
 # ---------------------------------------------------
@@ -983,6 +1059,37 @@ with st.expander("About This Dashboard"):
         "location-based risk visualization, and downloadable reports."
     )
 
+st.markdown(
+    """
+### How to Interpret This Dashboard
+
+This tool is designed to compare **relative outcomes between scenarios**, not to predict exact real-world case counts. 
+It is best used to understand how changes in transmission, intervention timing, recovery, mortality, and vaccination 
+affect trends such as peak infections, attack rate, deaths, and healthcare strain.
+"""
+)
+
+with st.expander("Model Assumptions"):
+    st.markdown(
+        """
+- **Closed population:** The model does not include births, migration, or people entering/leaving the population.
+- **Homogeneous mixing:** Everyone is assumed to have the same probability of contact with everyone else.
+- **Deterministic model:** The same inputs produce the same outputs every time; random variation is not included.
+- **Simplified vaccination and intervention effects:** Vaccination and policy changes are represented as simple rate changes.
+"""
+    )
+
+with st.expander("Limitations"):
+    st.markdown(
+        """
+- No age structure or demographic variation.
+- No true geographic spread modeling.
+- No stochastic uncertainty or random outbreak variation.
+- Simplified vaccination, mortality, and hospitalization assumptions.
+- Results are for education and scenario exploration, not official forecasting.
+"""
+    )
+
 
 # ---------------------------------------------------
 # TABS
@@ -1288,20 +1395,22 @@ with tabs[2]:
 
     st.markdown(
         """
-## SIR Model
-**Susceptible → Infected → Recovered**
+## SIRDV Model Overview
 
-The SIR model is useful for diseases where individuals become immune after recovery.
+The SIRDV model divides a population into five compartments:
 
-## SIRD Model
-**Susceptible → Infected → Recovered / Dead**
+- **S = Susceptible:** People who can still become infected.
+- **I = Infected:** People currently infected and able to transmit disease.
+- **R = Recovered:** People who recovered and are no longer infectious.
+- **D = Deceased:** People who died from the disease.
+- **V = Vaccinated:** People moved out of the susceptible group through vaccination.
 
-The SIRD model adds mortality and is useful when deaths are an important outcome.
+## Parameter Interpretation
 
-## SIRDV Model
-**Susceptible → Infected → Recovered / Dead / Vaccinated**
-
-The SIRDV model adds vaccination, allowing users to explore how vaccination changes outbreak dynamics.
+- **Beta / Transmission Rate:** Controls how quickly susceptible people become infected.
+- **Gamma / Recovery Rate:** Controls how quickly infected people recover.
+- **Mu / Mortality Rate:** Controls how quickly infected people move into the deceased compartment.
+- **Vaccination Rate:** Controls how quickly susceptible people become vaccinated.
 
 ## Dashboard Features
 
@@ -1383,19 +1492,11 @@ with tabs[3]:
         )
 
     default_beta_a, default_gamma_a, default_mu_a, default_vac_a = apply_policy_preset(
-        beta,
-        gamma,
-        mu,
-        vac,
-        preset_a,
+        beta, gamma, mu, vac, preset_a
     )
 
     default_beta_b, default_gamma_b, default_mu_b, default_vac_b = apply_policy_preset(
-        beta,
-        gamma,
-        mu,
-        vac,
-        preset_b,
+        beta, gamma, mu, vac, preset_b
     )
 
     with st.form("comparison_form"):
@@ -1442,80 +1543,156 @@ with tabs[3]:
             df_a = run_model(model_choice, population, infected, recovered, beta_a, gamma_a, mu_a, vac_a, days)
             df_b = run_model(model_choice, population, infected, recovered, beta_b, gamma_b, mu_b, vac_b, days)
 
-            best_df = run_model(
-                model_choice,
-                population,
-                infected,
-                recovered,
-                max(beta * 0.65, 0),
-                min(gamma * 1.25, 1),
-                max(mu * 0.75, 0),
-                min(vac + 0.05, 1),
-                days,
-            )
-
-            current_df = run_model(
-                model_choice,
-                population,
-                infected,
-                recovered,
-                beta,
-                gamma,
-                mu,
-                vac,
-                days,
-            )
-
-            worst_df = run_model(
-                model_choice,
-                population,
-                infected,
-                recovered,
-                min(beta * 1.35, 1),
-                max(gamma * 0.75, 0),
-                min(mu * 1.25, 1),
-                max(vac * 0.5, 0),
-                days,
-            )
-
             st.session_state.compare_results = {
                 "df_a": df_a,
                 "df_b": df_b,
-                "best_df": best_df,
-                "current_df": current_df,
-                "worst_df": worst_df,
                 "beta_a": beta_a,
                 "gamma_a": gamma_a,
+                "mu_a": mu_a,
+                "vac_a": vac_a,
                 "beta_b": beta_b,
                 "gamma_b": gamma_b,
+                "mu_b": mu_b,
+                "vac_b": vac_b,
             }
 
     if st.session_state.compare_results is not None:
         result = st.session_state.compare_results
 
+        df_a = result["df_a"]
+        df_b = result["df_b"]
+
+        metrics_a = build_comparison_metrics(
+            df_a,
+            result["beta_a"],
+            result["gamma_a"],
+            population,
+            hospitalization_rate,
+            icu_capacity,
+        )
+
+        metrics_b = build_comparison_metrics(
+            df_b,
+            result["beta_b"],
+            result["gamma_b"],
+            population,
+            hospitalization_rate,
+            icu_capacity,
+        )
+
+        comparison_rows = []
+
+        for metric_name in metrics_a:
+            value_a = metrics_a[metric_name]
+            value_b = metrics_b[metric_name]
+
+            if isinstance(value_a, (int, float)) and isinstance(value_b, (int, float)):
+                difference = value_b - value_a
+            else:
+                difference = "Changed" if value_a != value_b else "No Change"
+
+            comparison_rows.append(
+                {
+                    "Metric": metric_name,
+                    "Scenario A": value_a,
+                    "Scenario B": value_b,
+                    "Difference / Change": difference,
+                }
+            )
+
+        comparison_table = pd.DataFrame(comparison_rows)
+
+        st.subheader("Comparison Results Panel")
+        st.dataframe(comparison_table, use_container_width=True)
+
+        st.subheader("Primary Difference Summary")
+
+        d1, d2 = st.columns(2)
+        d3, d4 = st.columns(2)
+
+        d1.metric("Transmission Rate Difference", f"{result['beta_b'] - result['beta_a']:.3f}")
+        d2.metric("Recovery Rate Difference", f"{result['gamma_b'] - result['gamma_a']:.3f}")
+        d3.metric("Mortality Rate Difference", f"{result['mu_b'] - result['mu_a']:.3f}")
+        d4.metric("Vaccination Rate Difference", f"{result['vac_b'] - result['vac_a']:.3f}")
+
+        score = calculate_policy_effectiveness_score(metrics_a, metrics_b)
+
+        st.subheader("Policy Effectiveness Score")
+        st.metric("Scenario B Policy Effectiveness Score", f"{score}/100")
+
+        st.subheader("Auto Key Insight")
+        st.info(generate_comparison_insight(metrics_a, metrics_b))
+
         fig_compare = go.Figure()
 
-        compare_series = [
-            ("Scenario A", result["df_a"], "solid"),
-            ("Scenario B", result["df_b"], "dash"),
-            ("Best Case", result["best_df"], "dot"),
-            ("Current Case", result["current_df"], "solid"),
-            ("Worst Case", result["worst_df"], "longdash"),
-        ]
+        fig_compare.add_trace(
+            go.Scatter(
+                x=df_a["Day"],
+                y=df_a["Infected"],
+                mode="lines",
+                name="Scenario A Infected",
+                line=dict(width=4),
+            )
+        )
 
-        for name, scenario_df, dash_style in compare_series:
-            fig_compare.add_trace(
-                go.Scatter(
-                    x=scenario_df["Day"],
-                    y=scenario_df["Infected"],
-                    mode="lines",
-                    name=f"{name} Infected",
-                    line=dict(width=3, dash=dash_style),
-                )
+        fig_compare.add_trace(
+            go.Scatter(
+                x=df_b["Day"],
+                y=df_b["Infected"],
+                mode="lines",
+                name="Scenario B Infected",
+                line=dict(width=4, dash="dash"),
+            )
+        )
+
+        peak_day_a = int(df_a["Infected"].idxmax())
+        peak_value_a = float(df_a["Infected"].max())
+
+        peak_day_b = int(df_b["Infected"].idxmax())
+        peak_value_b = float(df_b["Infected"].max())
+
+        fig_compare.add_trace(
+            go.Scatter(
+                x=[peak_day_a],
+                y=[peak_value_a],
+                mode="markers",
+                name="Scenario A Peak",
+                marker=dict(size=12),
+            )
+        )
+
+        fig_compare.add_trace(
+            go.Scatter(
+                x=[peak_day_b],
+                y=[peak_value_b],
+                mode="markers",
+                name="Scenario B Peak",
+                marker=dict(size=12),
+            )
+        )
+
+        if hospitalization_rate > 0:
+            infected_icu_threshold = icu_capacity / hospitalization_rate
+
+            fig_compare.add_hline(
+                y=infected_icu_threshold,
+                line_dash="dash",
+                line_color="#f59e0b",
+                annotation_text="ICU Threshold",
+                annotation_position="top left",
+            )
+
+        if intervention_enabled:
+            fig_compare.add_vline(
+                x=intervention_day,
+                line_dash="dash",
+                line_color="#22c55e",
+                annotation_text="Intervention Start",
+                annotation_position="top right",
             )
 
         fig_compare.update_layout(
-            title="Scenario Comparison",
+            title="Overlay Comparison Plot: Scenario A vs Scenario B",
             xaxis_title="Day",
             yaxis_title="Infected Population",
             template=template,
@@ -1523,38 +1700,13 @@ with tabs[3]:
             height=650,
         )
 
+        st.subheader("Overlay Comparison Plot")
         st.plotly_chart(fig_compare, use_container_width=True)
 
-        m1 = metrics_from_df(result["df_a"], result["beta_a"], result["gamma_a"], population, hospitalization_rate)
-        m2 = metrics_from_df(result["df_b"], result["beta_b"], result["gamma_b"], population, hospitalization_rate)
-
-        comparison_table = pd.DataFrame(
-            {
-                "Metric": ["Peak Infected", "Day of Peak", "R₀", "Attack Rate", "ICU Overflow"],
-                "Scenario A": [
-                    round(m1["Peak Infected"], 2),
-                    m1["Day of Peak"],
-                    round(m1["R0"], 2),
-                    round(m1["Attack Rate"], 2),
-                    "Yes" if m1["Estimated Peak Hospitalizations"] > icu_capacity else "No",
-                ],
-                "Scenario B": [
-                    round(m2["Peak Infected"], 2),
-                    m2["Day of Peak"],
-                    round(m2["R0"], 2),
-                    round(m2["Attack Rate"], 2),
-                    "Yes" if m2["Estimated Peak Hospitalizations"] > icu_capacity else "No",
-                ],
-            }
-        )
-
-        st.subheader("Comparison Table")
-        st.dataframe(comparison_table, use_container_width=True)
-
         st.download_button(
-            "Download Scenario Comparison",
+            "Download Comparison Report CSV",
             comparison_table.to_csv(index=False).encode(),
-            file_name="scenario_comparison.csv",
+            file_name="scenario_comparison_report.csv",
             mime="text/csv",
         )
 
@@ -1882,6 +2034,11 @@ with tabs[7]:
     st.subheader("Location-Based Risk Heat Map")
     st.caption("Simulated local risk intensity based on the selected location and current model assumptions.")
 
+    st.info(
+        "Higher intensity indicates higher simulated infection pressure/risk. "
+        "Points are randomly jittered around the selected location to create a more natural-looking local risk surface."
+    )
+
     locations = {
         "New York, NY": (40.7128, -74.0060),
         "Chicago, IL": (41.8781, -87.6298),
@@ -2037,47 +2194,65 @@ with tabs[7]:
 # TAB 9: METHODS & ASSUMPTIONS
 # ---------------------------------------------------
 with tabs[8]:
-    st.subheader("Methods & Assumptions")
+    st.subheader("Model Transparency & Interpretation")
 
     st.markdown(
         """
-## Modeling Approach
+## How to Interpret This Dashboard
 
-This dashboard uses simplified compartmental infectious disease models:
+This tool is designed to compare **relative outcomes between scenarios**, not to predict exact real-world case counts. 
+It is best used to understand how changes in transmission, intervention timing, vaccination, recovery, and mortality 
+affect trends like peak infections, healthcare strain, and final outcomes.
+"""
+    )
 
-- **SIR:** Susceptible, Infected, Recovered
-- **SIRD:** Susceptible, Infected, Recovered, Dead
-- **SIRDV:** Susceptible, Infected, Recovered, Dead, Vaccinated
+    with st.expander("Model Assumptions"):
+        st.markdown(
+            """
+- **Closed population:** No births, migration, or people entering/leaving the system.
+- **Homogeneous mixing:** Everyone is assumed to have equal contact probability.
+- **Deterministic model:** Results do not include random variation.
+- **Simplified vaccination and intervention effects:** Vaccination and intervention policies are represented through simplified rate changes.
+"""
+        )
 
-## Added Analytics
+    with st.expander("Limitations"):
+        st.markdown(
+            """
+- No age structure or demographic variation.
+- No true geographic spread modeling.
+- No stochastic uncertainty.
+- Simplified vaccination and mortality assumptions.
+- Location-based heat maps are simulated and are not based on real surveillance data.
+"""
+        )
 
-- Scenario comparison
-- Policy impact scoring
-- Timeline callouts
-- Real-world mode labels
-- Sensitivity uncertainty band
-- Intervention timing analysis
-- Healthcare capacity tracking
-- Simulated location-based risk heat map
+    with st.expander("SIRDV Model Overview"):
+        st.markdown(
+            """
+- **S = Susceptible:** Individuals who can still become infected.
+- **I = Infected:** Individuals currently infected.
+- **R = Recovered:** Individuals who have recovered.
+- **D = Deceased:** Individuals who have died.
+- **V = Vaccinated:** Individuals protected through vaccination.
 
-## Assumptions
+### Parameter Effects
 
-- The population is treated as a closed system.
-- Parameters remain constant unless an intervention is enabled.
-- The model is deterministic and does not include random uncertainty.
-- Hospitalizations are estimated from peak infected counts using a user-defined rate.
-- ICU capacity is used as a simplified healthcare strain threshold.
-- The location heat map is simulated and not based on live surveillance data.
+- **Beta / Transmission Rate:** Higher values increase new infections.
+- **Gamma / Recovery Rate:** Higher values move infected individuals into recovery faster.
+- **Mu / Mortality Rate:** Higher values increase deaths.
+- **Vaccination Rate:** Higher values reduce the susceptible population faster.
+"""
+        )
 
-## Limitations
+    st.markdown(
+        """
+## References
 
-- This is not a calibrated real-world forecast.
-- It does not account for age, geography, behavior change, reinfection, testing, or reporting delays.
-- The location heat map is for visualization and educational purposes only.
-
-## Why This Matters
-
-This tool demonstrates how small differences in transmission, recovery, vaccination, and intervention timing can produce large differences in outbreak severity and healthcare strain.
+- Kermack, W. O., & McKendrick, A. G. (1927). *A Contribution to the Mathematical Theory of Epidemics.*
+- Hethcote, H. W. (2000). *The Mathematics of Infectious Diseases.*
+- Anderson, R. M., & May, R. M. (1991). *Infectious Diseases of Humans: Dynamics and Control.*
+- Centers for Disease Control and Prevention. Principles of Epidemiology in Public Health Practice.
 """
     )
 
@@ -2086,4 +2261,13 @@ This tool demonstrates how small differences in transmission, recovery, vaccinat
 # FOOTER
 # ---------------------------------------------------
 st.markdown("---")
-st.caption("Built by Omar Rulida Abdul-Rahman | MPH Candidate | Python + Streamlit")
+st.markdown(
+    """
+### Epidemiological Decision Dashboard
+
+Built using **Python** and **Streamlit**  
+Created by **Omar Rulida Abdul-Rahman**  
+Portfolio project for epidemiological modeling, public health analytics, and interactive dashboard design.
+"""
+)
+st.caption("SIRDV Epidemiological Decision Dashboard | Python + Streamlit")
