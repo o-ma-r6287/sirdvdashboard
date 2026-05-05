@@ -306,23 +306,23 @@ def readiness_grade(metrics, icu_capacity, vac):
     score = max(min(score, 100), 0)
 
     if score >= 93:
-    return "🟢 A (Excellent)"
+        return "🟢 A (Excellent)"
     if score >= 90:
-    return "🟢 A- (Very Strong)"
+        return "🟢 A- (Very Strong)"
     if score >= 87:
-    return "🟡 B+ (Strong)"
+        return "🟡 B+ (Strong)"
     if score >= 83:
-    return "🟡 B (Good)"
+        return "🟡 B (Good)"
     if score >= 80:
-    return "🟡 B- (Solid)"
+        return "🟡 B- (Solid)"
     if score >= 77:
-    return "🟠 C+ (Moderate)"
+        return "🟠 C+ (Moderate)"
     if score >= 73:
-    return "🟠 C (Needs Improvement)"
+        return "🟠 C (Needs Improvement)"
     if score >= 70:
-    return "🟠 C- (Weak)"
+        return "🟠 C- (Weak)"
     if score >= 60:
-    return "🔴 D (Poor)"
+        return "🔴 D (Poor)"
 
     return "⚫ F (Critical Risk)"
 
