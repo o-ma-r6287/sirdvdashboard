@@ -1252,7 +1252,7 @@ with tabs[0]:
         st.subheader("Public Health Decision Brief")
 
         k1 = st.columns(1)
-        k1.metric("Risk Level", f"{risk_label} ({risk_description})")
+        k1.metric("Risk Level", risk)
         
         k2, k3 = st.columns(2)
         k2.metric("R₀", f"{metrics['R0']:.2f}")
