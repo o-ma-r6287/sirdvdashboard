@@ -1261,7 +1261,7 @@ with tabs[0]:
         k4 = st.columns(2)
         k4.metric("ICU Status", icu_status)
 
-        k5 = st.columns(1)[0]
+        k5 = st.columns(1)
         k5.metric("Readiness Grade", grade)
 
         if risk_style == "error":
