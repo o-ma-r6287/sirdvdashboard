@@ -1,3 +1,7 @@
+# Complete Streamlit SIR / SIRD / SIRDV Epidemiological Decision Dashboard
+# Version 1.0
+# Built by Omar Abdul-Rahman
+
 import io
 import time
 import math
@@ -53,14 +57,19 @@ run_sim = load_run_sim()
 # PAGE CONFIGURATION
 # ---------------------------------------------------
 st.set_page_config(
-    page_title="Epidemiological Decision Dashboard",
+    page_title="SIRDV Epidemiological Decision Dashboard",
     page_icon="🦠",
     layout="wide",
 )
 
-st.title("🦠 Epidemiological Decision Dashboard")
-st.caption("Interactive disease spread analytics for SIR / SIRD / SIRDV models")
-st.caption("Built by Omar Rulida Abdul-Rahman | MPH Candidate")
+st.title("🦠 SIRDV Epidemiological Decision Dashboard")
+st.caption("Version 1.0 | Interactive public health simulation for SIR / SIRD / SIRDV models")
+st.caption("Built by Omar Abdul-Rahman | Python + Streamlit")
+
+st.warning(
+    "For educational scenario exploration only. This dashboard is not an official forecasting tool "
+    "and should not be used for real-world public health decision-making without validated data and expert review."
+)
 
 
 # ---------------------------------------------------
@@ -126,17 +135,7 @@ def run_model_with_intervention(
     increased_vac,
 ):
     if not intervention_enabled or intervention_day <= 1 or intervention_day >= days:
-        return run_model(
-            model_choice,
-            pop,
-            infected,
-            recovered,
-            beta,
-            gamma,
-            mu,
-            vac,
-            days,
-        )
+        return run_model(model_choice, pop, infected, recovered, beta, gamma, mu, vac, days)
 
     first_df = run_model(
         model_choice,
@@ -181,25 +180,18 @@ def run_model_with_intervention(
 def get_columns(model):
     if model == "SIR":
         return ["Susceptible", "Infected", "Recovered"]
-
     if model == "SIRD":
         return ["Susceptible", "Infected", "Recovered", "Dead"]
-
     return ["Susceptible", "Infected", "Recovered", "Dead", "Vaccinated"]
 
 
 def convert_to_percent(df, columns, population):
     df_percent = df.copy()
-
     for col in columns:
         df_percent[col] = (df_percent[col] / population) * 100
-
     return df_percent
 
 
-# ---------------------------------------------------
-# LABEL MODE
-# ---------------------------------------------------
 def label_text(label, real_world_mode):
     if not real_world_mode:
         return label
@@ -219,55 +211,31 @@ def label_text(label, real_world_mode):
 # ---------------------------------------------------
 def metrics_from_df(df, beta, gamma, population, hospitalization_rate):
     peak_infected = float(df["Infected"].max())
-    day_of_peak = int(df["Infected"].idxmax())
+    day_of_peak = int(df.loc[df["Infected"].idxmax(), "Day"])
     final_recovered = float(df["Recovered"].iloc[-1])
     final_deaths = float(df["Dead"].iloc[-1])
     final_vaccinated = float(df["Vaccinated"].iloc[-1])
     remaining_susceptible = float(df["Susceptible"].iloc[-1])
 
     r0 = beta / gamma if gamma > 0 else 0
-    total_impacted = population - remaining_susceptible
     attack_rate = ((final_recovered + final_deaths) / population) * 100
     estimated_peak_hospitalizations = peak_infected * hospitalization_rate
     cumulative_cases = final_recovered + final_deaths
+    peak_percent = (peak_infected / population) * 100
 
     return {
         "Peak Infected": peak_infected,
+        "Peak Infected %": peak_percent,
         "Day of Peak": day_of_peak,
         "Recovered": final_recovered,
         "Deaths": final_deaths,
         "Vaccinated": final_vaccinated,
         "Susceptible": remaining_susceptible,
         "R0": r0,
-        "Total Impacted": total_impacted,
         "Attack Rate": attack_rate,
         "Estimated Peak Hospitalizations": estimated_peak_hospitalizations,
         "Cumulative Cases": cumulative_cases,
     }
-
-
-def outbreak_phase(df):
-    current_infected = float(df["Infected"].iloc[-1])
-    peak_infected = float(df["Infected"].max())
-    peak_day = int(df["Infected"].idxmax())
-    final_day = int(df["Day"].iloc[-1])
-
-    if current_infected <= 1:
-        return "Controlled"
-
-    if final_day < peak_day:
-        return "Acceleration"
-
-    if abs(final_day - peak_day) <= 5:
-        return "Peak"
-
-    if current_infected < peak_infected * 0.25:
-        return "Decline"
-
-    if final_day < 15:
-        return "Emergence"
-
-    return "Post-Peak Monitoring"
 
 
 def first_icu_crossing_day(df, hospitalization_rate, icu_capacity):
@@ -280,30 +248,26 @@ def first_icu_crossing_day(df, hospitalization_rate, icu_capacity):
     return int(crossed["Day"].iloc[0])
 
 
-def policy_recommendation(metrics, icu_capacity):
-    if metrics["Estimated Peak Hospitalizations"] > icu_capacity:
-        return "Urgent intervention recommended: estimated peak hospitalizations exceed ICU capacity."
-
-    if metrics["R0"] > 2:
-        return "Strong intervention recommended: reduce transmission through vaccination, distancing, or other controls."
-
-    if metrics["Attack Rate"] > 50:
-        return "High population impact expected: vaccination and transmission reduction should be prioritized."
-
-    if metrics["R0"] <= 1:
-        return "Current parameters suggest the outbreak may be controlled."
-
-    return "Moderate risk: continue monitoring and consider preventive interventions."
+def icu_status_text(df, hospitalization_rate, icu_capacity):
+    breach_day = first_icu_crossing_day(df, hospitalization_rate, icu_capacity)
+    if breach_day is None:
+        return "Within Capacity", None
+    return f"Exceeded Capacity (Day {breach_day})", breach_day
 
 
 def risk_level(metrics, icu_capacity):
-    if metrics["Estimated Peak Hospitalizations"] > icu_capacity or metrics["R0"] > 3:
-        return "High Risk", "error"
+    icu_exceeded = metrics["Estimated Peak Hospitalizations"] > icu_capacity
 
-    if metrics["R0"] > 1 or metrics["Attack Rate"] > 25:
-        return "Moderate Risk", "warning"
+    if icu_exceeded or metrics["R0"] >= 3.0 or metrics["Attack Rate"] >= 70:
+        return "⚫ Critical", "Critical Overload", "error"
 
-    return "Controlled / Lower Risk", "success"
+    if metrics["R0"] >= 2.0 or metrics["Attack Rate"] >= 40:
+        return "🔴 High", "Uncontrolled Spread", "warning"
+
+    if metrics["R0"] > 1.0 or metrics["Attack Rate"] >= 15:
+        return "🟡 Moderate", "Elevated Transmission", "warning"
+
+    return "🟢 Low", "Contained / Lower Risk", "success"
 
 
 def readiness_grade(metrics, icu_capacity, vac):
@@ -353,6 +317,49 @@ def readiness_grade(metrics, icu_capacity, vac):
     return "F"
 
 
+def policy_recommendation(metrics, icu_capacity):
+    if metrics["Estimated Peak Hospitalizations"] > icu_capacity:
+        return "Strong intervention is recommended: reduce transmission through earlier intervention, vaccination, distancing, or other control measures."
+
+    if metrics["R0"] > 2:
+        return "Strong intervention is recommended: reduce transmission through earlier intervention, vaccination, distancing, or other control measures."
+
+    if metrics["Attack Rate"] > 50:
+        return "High population impact is expected. Increase vaccination, reduce transmission, and monitor healthcare capacity closely."
+
+    if metrics["R0"] <= 1:
+        return "Current parameters suggest lower transmission pressure. Continue monitoring and maintain prevention measures."
+
+    return "Moderate risk is present. Consider earlier intervention, vaccination, and continued ICU monitoring."
+
+
+def public_health_decision_brief(metrics, risk_label, risk_description, grade, recommendation):
+    if risk_label.startswith("🟢"):
+        return (
+            f"This simulation indicates a lower-risk outbreak scenario with peak infection around day "
+            f"{metrics['Day of Peak']}, an estimated attack rate of {metrics['Attack Rate']:.1f}%, "
+            f"an estimated R₀ of {metrics['R0']:.2f}, and a public health readiness grade of {grade}. "
+            f"Continue monitoring, maintain prevention measures, and use scenario comparison to test whether conditions worsen."
+        )
+
+    return (
+        f"This simulation indicates an uncontrolled outbreak scenario with rapid transmission, "
+        f"a peak infection around day {metrics['Day of Peak']}, and an estimated attack rate of "
+        f"{metrics['Attack Rate']:.1f}%. The estimated R₀ is {metrics['R0']:.2f}, and the public health "
+        f"readiness grade is {grade}. {recommendation}"
+    )
+
+
+def bottom_line(metrics, icu_capacity):
+    if metrics["Estimated Peak Hospitalizations"] > icu_capacity:
+        return "Bottom Line: Without stronger intervention, the healthcare system may be overwhelmed early in the outbreak."
+
+    if metrics["R0"] > 1:
+        return "Bottom Line: Transmission remains above the replacement threshold, so earlier intervention may reduce future healthcare strain."
+
+    return "Bottom Line: Current assumptions suggest the outbreak may remain manageable, but continued monitoring is still needed."
+
+
 def policy_impact_score(current_metrics, baseline_metrics, icu_capacity):
     baseline_peak = baseline_metrics["Peak Infected"]
     current_peak = current_metrics["Peak Infected"]
@@ -360,46 +367,25 @@ def policy_impact_score(current_metrics, baseline_metrics, icu_capacity):
     baseline_cases = baseline_metrics["Cumulative Cases"]
     current_cases = current_metrics["Cumulative Cases"]
 
-    peak_reduction_pct = 0
-    case_reduction_pct = 0
-
-    if baseline_peak > 0:
-        peak_reduction_pct = ((baseline_peak - current_peak) / baseline_peak) * 100
-
-    if baseline_cases > 0:
-        case_reduction_pct = ((baseline_cases - current_cases) / baseline_cases) * 100
+    peak_reduction_pct = ((baseline_peak - current_peak) / baseline_peak) * 100 if baseline_peak > 0 else 0
+    case_reduction_pct = ((baseline_cases - current_cases) / baseline_cases) * 100 if baseline_cases > 0 else 0
 
     icu_bonus = 20 if current_metrics["Estimated Peak Hospitalizations"] <= icu_capacity else 0
 
     score = 40 + (peak_reduction_pct * 0.3) + (case_reduction_pct * 0.3) + icu_bonus
-    score = max(min(score, 100), 0)
-
-    return round(score, 1)
+    return round(max(min(score, 100), 0), 1)
 
 
 def generate_insights(df, beta, gamma, mu, vac, population, hospitalization_rate):
-    metrics = metrics_from_df(
-        df,
-        beta,
-        gamma,
-        population,
-        hospitalization_rate,
-    )
-
+    metrics = metrics_from_df(df, beta, gamma, population, hospitalization_rate)
     insights = []
 
     if metrics["R0"] > 3:
-        insights.append(
-            "High transmission pressure: R₀ is well above 1, suggesting rapid outbreak growth."
-        )
+        insights.append("High transmission pressure: R₀ is well above 1, suggesting rapid outbreak growth.")
     elif metrics["R0"] > 1:
-        insights.append(
-            "Moderate outbreak potential: R₀ is above 1, so infections may continue growing."
-        )
+        insights.append("Moderate outbreak potential: R₀ is above 1, so infections may continue growing.")
     else:
-        insights.append(
-            "Controlled transmission: R₀ is at or below 1, suggesting the outbreak may shrink over time."
-        )
+        insights.append("Lower transmission pressure: R₀ is at or below 1, suggesting infections may decline over time.")
 
     if metrics["Day of Peak"] <= 30:
         insights.append("Peak infection occurs early, indicating fast disease spread.")
@@ -415,12 +401,10 @@ def generate_insights(df, beta, gamma, mu, vac, population, hospitalization_rate
         insights.append("Vaccination is meaningfully reducing the susceptible population over time.")
 
     if mu >= 0.03:
-        insights.append("Death rate is elevated, making this a higher-severity scenario.")
+        insights.append("Mortality pressure is elevated, making this a higher-severity scenario.")
 
     if metrics["Attack Rate"] >= 50:
-        insights.append(
-            "A large share of the population experiences infection or death by the end of the simulation."
-        )
+        insights.append("A large share of the population experiences infection or death by the end of the simulation.")
     elif metrics["Attack Rate"] <= 10:
         insights.append("Final infection burden remains relatively low.")
 
@@ -430,87 +414,60 @@ def generate_insights(df, beta, gamma, mu, vac, population, hospitalization_rate
     return insights
 
 
-def executive_brief(metrics, phase, recommendation, grade):
-    return (
-        f"This simulation indicates a {phase.lower()} outbreak phase with peak infection "
-        f"on day {metrics['Day of Peak']} and an estimated attack rate of "
-        f"{metrics['Attack Rate']:.1f}%. The estimated R₀ is {metrics['R0']:.2f}, "
-        f"and the public health readiness grade is {grade}. {recommendation}"
-    )
-
-
 def build_comparison_metrics(df, beta, gamma, population, hospitalization_rate, icu_capacity):
     metrics = metrics_from_df(df, beta, gamma, population, hospitalization_rate)
-
-    peak_deaths = float(df["Dead"].max())
-    final_deaths = float(df["Dead"].iloc[-1])
-    cumulative_infected = metrics["Cumulative Cases"]
-    icu_overflow = metrics["Estimated Peak Hospitalizations"] > icu_capacity
     icu_cross_day = first_icu_crossing_day(df, hospitalization_rate, icu_capacity)
+    icu_overflow = icu_cross_day is not None
 
     return {
-        "Peak Infected": metrics["Peak Infected"],
-        "Peak Infected Day": metrics["Day of Peak"],
-        "Total/Cumulative Infected": cumulative_infected,
-        "Peak Deaths": peak_deaths,
-        "Final Deaths": final_deaths,
-        "ICU Overflow": "Yes" if icu_overflow else "No",
-        "First ICU Overflow Day": icu_cross_day if icu_cross_day is not None else "N/A",
+        "Peak infected": metrics["Peak Infected"],
+        "Peak day": metrics["Day of Peak"],
+        "Total infected / attack rate": metrics["Attack Rate"],
+        "Final deaths": metrics["Deaths"],
+        "ICU overflow: Yes/No": "Yes" if icu_overflow else "No",
+        "ICU breach day": icu_cross_day if icu_cross_day is not None else "N/A",
     }
 
 
 def calculate_policy_effectiveness_score(metrics_a, metrics_b):
     score = 50
 
-    if metrics_b["Peak Infected"] < metrics_a["Peak Infected"]:
+    if metrics_b["Peak infected"] < metrics_a["Peak infected"]:
         score += 15
 
-    if metrics_b["Total/Cumulative Infected"] < metrics_a["Total/Cumulative Infected"]:
+    if metrics_b["Total infected / attack rate"] < metrics_a["Total infected / attack rate"]:
         score += 15
 
-    if metrics_a["ICU Overflow"] == "Yes" and metrics_b["ICU Overflow"] == "No":
+    if metrics_a["ICU overflow: Yes/No"] == "Yes" and metrics_b["ICU overflow: Yes/No"] == "No":
         score += 20
-    elif metrics_b["ICU Overflow"] == "Yes":
+    elif metrics_b["ICU overflow: Yes/No"] == "Yes":
         score -= 10
 
-    if metrics_b["Final Deaths"] < metrics_a["Final Deaths"]:
+    if metrics_b["Final deaths"] < metrics_a["Final deaths"]:
         score += 15
 
     return max(0, min(100, score))
 
 
 def generate_comparison_insight(metrics_a, metrics_b):
-    peak_difference = metrics_a["Peak Infected"] - metrics_b["Peak Infected"]
-    peak_percent_change = 0
+    peak_difference = metrics_a["Peak infected"] - metrics_b["Peak infected"]
+    peak_percent_change = (peak_difference / metrics_a["Peak infected"]) * 100 if metrics_a["Peak infected"] > 0 else 0
+    peak_day_change = metrics_b["Peak day"] - metrics_a["Peak day"]
 
-    if metrics_a["Peak Infected"] > 0:
-        peak_percent_change = (peak_difference / metrics_a["Peak Infected"]) * 100
+    if peak_difference > 0 and metrics_a["ICU overflow: Yes/No"] == "Yes" and metrics_b["ICU overflow: Yes/No"] == "No":
+        return f"Scenario B reduced peak infections by {peak_percent_change:.1f}% and prevented ICU overflow."
 
-    peak_day_change = metrics_b["Peak Infected Day"] - metrics_a["Peak Infected Day"]
+    if peak_difference > 0 and metrics_b["ICU overflow: Yes/No"] == "Yes":
+        return f"Scenario B reduced peak infections by {peak_percent_change:.1f}%, but did not prevent ICU overflow."
 
-    if peak_difference > 0 and metrics_a["ICU Overflow"] == "Yes" and metrics_b["ICU Overflow"] == "No":
-        return (
-            f"Scenario B reduced peak infections by {peak_percent_change:.1f}% "
-            f"and prevented ICU overflow."
-        )
-
-    if peak_difference > 0:
-        return (
-            f"Scenario B reduced peak infections by {peak_percent_change:.1f}% "
-            f"compared with Scenario A."
-        )
+    if peak_day_change > 0 and metrics_b["ICU overflow: Yes/No"] == "Yes":
+        return f"Scenario B delayed the peak by {peak_day_change} days but did not prevent ICU overflow."
 
     if peak_day_change > 0:
-        return (
-            f"Scenario B delayed the peak by {peak_day_change} days, "
-            f"but ICU overflow status was {metrics_b['ICU Overflow']}."
-        )
+        return f"Scenario B delayed the peak by {peak_day_change} days."
 
     if peak_difference < 0:
-        return (
-            "Scenario B produced a higher infection peak than Scenario A. "
-            "This may indicate a weaker or delayed intervention strategy."
-        )
+        return "Scenario B produced a higher infection peak than Scenario A. This may indicate a weaker or delayed intervention strategy."
 
     return "Both scenarios produced similar peak infection outcomes."
 
@@ -530,26 +487,24 @@ def make_plot(
     intervention_day=None,
 ):
     colors = {
-        "Susceptible": "#1f77b4",
-        "Infected": "#d62728",
-        "Recovered": "#2ca02c",
-        "Dead": "#7f7f7f",
-        "Vaccinated": "#9467bd",
-        "Cumulative Cases": "#ff7f0e",
+        "Susceptible": "#2563eb",
+        "Infected": "#dc2626",
+        "Recovered": "#16a34a",
+        "Dead": "#6b7280",
+        "Vaccinated": "#7c3aed",
+        "Cumulative Cases": "#f59e0b",
     }
 
     fig = go.Figure()
 
     for col in get_columns(model):
-        line_width = 4 if col == "Infected" else 3
-
         fig.add_trace(
             go.Scatter(
                 x=df["Day"],
                 y=df[col],
                 mode="lines",
                 name=col,
-                line=dict(width=line_width, color=colors[col]),
+                line=dict(width=4 if col == "Infected" else 3, color=colors[col]),
                 hovertemplate=f"{col}: %{{y:.2f}}<extra></extra>",
             )
         )
@@ -566,40 +521,33 @@ def make_plot(
         )
 
     peak_idx = int(df["Infected"].idxmax())
+    peak_day = int(df.loc[peak_idx, "Day"])
     peak_val = float(df["Infected"].max())
-
-    label_bg = "#ffffff" if template == "plotly_white" else "#111827"
-    label_font = "#111827" if template == "plotly_white" else "#ffffff"
 
     fig.add_trace(
         go.Scatter(
-            x=[peak_idx],
+            x=[peak_day],
             y=[peak_val],
             mode="markers",
-            name="Peak Marker",
-            marker=dict(size=12, color="#d62728", line=dict(width=2, color="white")),
-            showlegend=False,
+            name="Peak Infection",
+            marker=dict(size=12, color="#dc2626", line=dict(width=2, color="white")),
             hovertemplate="Peak Infection: %{y:.0f}<extra></extra>",
         )
     )
 
     fig.add_annotation(
-        x=peak_idx,
+        x=peak_day,
         y=peak_val,
         text="<b>Peak</b>",
         showarrow=True,
         arrowhead=2,
-        arrowsize=1,
-        arrowwidth=2,
-        arrowcolor="#d62728",
         ax=0,
         ay=-45,
-        font=dict(size=13, color=label_font),
-        bgcolor=label_bg,
-        bordercolor="#d62728",
+        bgcolor="#ffffff" if template == "plotly_white" else "#111827",
+        font=dict(color="#111827" if template == "plotly_white" else "#ffffff"),
+        bordercolor="#dc2626",
         borderwidth=2,
         borderpad=4,
-        opacity=0.98,
     )
 
     if icu_capacity is not None and y_axis_title == "Population":
@@ -613,7 +561,6 @@ def make_plot(
 
         if hospitalization_rate is not None:
             crossing_day = first_icu_crossing_day(df, hospitalization_rate, icu_capacity)
-
             if crossing_day is not None:
                 fig.add_vline(
                     x=crossing_day,
@@ -682,12 +629,111 @@ def make_healthcare_timeline(df, hospitalization_rate, icu_capacity, template):
     return fig
 
 
+def make_overlay_comparison_plot(
+    df_a,
+    df_b,
+    template,
+    hospitalization_rate,
+    icu_capacity,
+    intervention_day_a=None,
+    intervention_day_b=None,
+):
+    fig = go.Figure()
+
+    fig.add_trace(
+        go.Scatter(
+            x=df_a["Day"],
+            y=df_a["Infected"],
+            mode="lines",
+            name="Scenario A Infected",
+            line=dict(width=4),
+        )
+    )
+
+    fig.add_trace(
+        go.Scatter(
+            x=df_b["Day"],
+            y=df_b["Infected"],
+            mode="lines",
+            name="Scenario B Infected",
+            line=dict(width=4, dash="dash"),
+        )
+    )
+
+    peak_idx_a = int(df_a["Infected"].idxmax())
+    peak_day_a = int(df_a.loc[peak_idx_a, "Day"])
+    peak_value_a = float(df_a["Infected"].max())
+
+    peak_idx_b = int(df_b["Infected"].idxmax())
+    peak_day_b = int(df_b.loc[peak_idx_b, "Day"])
+    peak_value_b = float(df_b["Infected"].max())
+
+    fig.add_trace(
+        go.Scatter(
+            x=[peak_day_a],
+            y=[peak_value_a],
+            mode="markers",
+            name="Scenario A Peak",
+            marker=dict(size=12),
+        )
+    )
+
+    fig.add_trace(
+        go.Scatter(
+            x=[peak_day_b],
+            y=[peak_value_b],
+            mode="markers",
+            name="Scenario B Peak",
+            marker=dict(size=12),
+        )
+    )
+
+    if hospitalization_rate > 0:
+        fig.add_hline(
+            y=icu_capacity / hospitalization_rate,
+            line_dash="dash",
+            line_color="#f59e0b",
+            annotation_text="ICU Threshold",
+            annotation_position="top left",
+        )
+
+    if intervention_day_a is not None:
+        fig.add_vline(
+            x=intervention_day_a,
+            line_dash="dot",
+            line_color="#22c55e",
+            annotation_text="Scenario A Intervention",
+            annotation_position="top left",
+        )
+
+    if intervention_day_b is not None:
+        fig.add_vline(
+            x=intervention_day_b,
+            line_dash="dash",
+            line_color="#16a34a",
+            annotation_text="Scenario B Intervention",
+            annotation_position="top right",
+        )
+
+    fig.update_layout(
+        title="Overlay Comparison Plot: Scenario A vs Scenario B",
+        xaxis_title="Day",
+        yaxis_title="Infected Population",
+        template=template,
+        hovermode="x unified",
+        height=650,
+    )
+
+    return fig
+
+
 # ---------------------------------------------------
 # DOWNLOAD HELPERS
 # ---------------------------------------------------
 def create_parameter_summary(params):
-    return f"""Epidemiological Decision Dashboard Parameter Summary
+    return f"""SIRDV Epidemiological Decision Dashboard Parameter Summary
 
+Version: 1.0
 Model: {params["model_choice"]}
 Population: {params["population"]}
 Initial Infected: {params["infected"]}
@@ -704,14 +750,21 @@ Intervention Enabled: {params["intervention_enabled"]}
 Intervention Day: {params["intervention_day"]}
 Post-Intervention Transmission: {params["reduced_beta"]}
 Post-Intervention Vaccination: {params["increased_vac"]}
+
+Disclaimer:
+For educational scenario exploration only. This dashboard is not an official forecasting tool and should not be used for real-world public health decision-making without validated data and expert review.
 """
 
 
-def create_full_report(params, metrics, insights, recommendation, phase, grade, brief, impact_score=None):
-    return f"""Epidemiological Decision Dashboard Report
+def create_full_report(params, metrics, insights, recommendation, grade, brief, risk_label, icu_status, impact_score=None):
+    return f"""SIRDV Epidemiological Decision Dashboard Report
+Version 1.0
 
-Executive Summary:
+Public Health Decision Brief:
 {brief}
+
+Risk Level:
+{risk_label}
 
 Model:
 {params["model_choice"]}
@@ -736,6 +789,7 @@ Post-Intervention Vaccination: {params["increased_vac"]}
 
 Key Results:
 Peak Infected: {metrics["Peak Infected"]:,.0f}
+Peak Infected %: {metrics["Peak Infected %"]:.2f}%
 Day of Peak: {metrics["Day of Peak"]}
 R0: {metrics["R0"]:.2f}
 Attack Rate: {metrics["Attack Rate"]:.2f}%
@@ -744,7 +798,7 @@ Deaths: {metrics["Deaths"]:,.0f}
 Vaccinated: {metrics["Vaccinated"]:,.0f}
 Susceptible Remaining: {metrics["Susceptible"]:,.0f}
 Estimated Peak Hospitalizations: {metrics["Estimated Peak Hospitalizations"]:,.0f}
-Outbreak Phase: {phase}
+ICU Status: {icu_status}
 Public Health Readiness Grade: {grade}
 Policy Impact Score: {impact_score if impact_score is not None else "N/A"}
 
@@ -754,46 +808,28 @@ Automated Interpretation:
 Policy Recommendation:
 {recommendation}
 
-Methods and Assumptions:
-This dashboard uses simplified deterministic compartmental modeling.
-Results are educational estimates and should not be used as real-world forecasts.
+Disclaimer:
+For educational scenario exploration only. This dashboard is not an official forecasting tool and should not be used for real-world public health decision-making without validated data and expert review.
 """
 
 
-def create_scenario_summary(metrics, phase, grade, recommendation):
-    return f"""Scenario Summary
-
-Risk Phase: {phase}
-Readiness Grade: {grade}
-Peak Infected: {metrics["Peak Infected"]:,.0f}
-Day of Peak: {metrics["Day of Peak"]}
-R0: {metrics["R0"]:.2f}
-Attack Rate: {metrics["Attack Rate"]:.2f}%
-Estimated Peak Hospitalizations: {metrics["Estimated Peak Hospitalizations"]:,.0f}
-
-Recommendation:
-{recommendation}
-"""
-
-
-def plot_download_buttons(fig, model_choice):
+def plot_download_buttons(fig, file_prefix):
     html_buffer = io.StringIO()
     fig.write_html(html_buffer, include_plotlyjs="cdn")
 
     st.download_button(
         "Download Interactive Plot as HTML",
         data=html_buffer.getvalue(),
-        file_name=f"{model_choice.lower()}_interactive_plot.html",
+        file_name=f"{file_prefix}_interactive_plot.html",
         mime="text/html",
     )
 
     try:
         png_bytes = fig.to_image(format="png", scale=3)
-
         st.download_button(
             "Download Plot as PNG",
             data=png_bytes,
-            file_name=f"{model_choice.lower()}_simulation_plot.png",
+            file_name=f"{file_prefix}_plot.png",
             mime="image/png",
         )
     except Exception:
@@ -810,27 +846,14 @@ if st.sidebar.button("Reset Dashboard"):
         st.session_state[key] = None
     st.rerun()
 
-mode = st.sidebar.radio(
-    "Interface Mode",
-    ["Academic Mode", "Real-World Mode"],
-)
-
+mode = st.sidebar.radio("Interface Mode", ["Academic Mode", "Real-World Mode"])
 real_world_mode = mode == "Real-World Mode"
 
-guided_start = st.sidebar.checkbox(
-    "Start with a realistic baseline scenario",
-    value=False,
-)
+guided_start = st.sidebar.checkbox("Start with a realistic baseline scenario", value=False)
 
 preset = st.sidebar.selectbox(
     "Preset Scenario",
-    [
-        "Custom",
-        "COVID-like",
-        "Seasonal Flu",
-        "High Vaccination",
-        "Severe Outbreak",
-    ],
+    ["Custom", "COVID-like", "Seasonal Flu", "High Vaccination", "Severe Outbreak"],
 )
 
 preset_values = {
@@ -900,25 +923,11 @@ if guided_start:
         "days": 120,
     }
 
-model_choice = st.sidebar.selectbox("Choose Model", ["SIR", "SIRD", "SIRDV"])
+model_choice = st.sidebar.selectbox("Model Selection", ["SIR", "SIRD", "SIRDV"])
 
-population = st.sidebar.number_input(
-    "Total Population",
-    min_value=1,
-    value=defaults["population"],
-)
-
-infected = st.sidebar.number_input(
-    "Initial Infected",
-    min_value=0,
-    value=defaults["infected"],
-)
-
-recovered = st.sidebar.number_input(
-    "Initial Recovered",
-    min_value=0,
-    value=defaults["recovered"],
-)
+population = st.sidebar.number_input("Population", min_value=1, value=defaults["population"])
+infected = st.sidebar.number_input("Initial Infected", min_value=0, value=defaults["infected"])
+recovered = st.sidebar.number_input("Initial Recovered", min_value=0, value=defaults["recovered"])
 
 beta = st.sidebar.slider(
     label_text("Beta (Infection Rate)", real_world_mode),
@@ -926,7 +935,6 @@ beta = st.sidebar.slider(
     1.0,
     defaults["beta"],
     0.01,
-    help="Higher transmission reflects more contact, lower masking, or faster disease spread.",
 )
 
 gamma = st.sidebar.slider(
@@ -935,7 +943,6 @@ gamma = st.sidebar.slider(
     1.0,
     defaults["gamma"],
     0.01,
-    help="Higher recovery speed means infected individuals recover faster.",
 )
 
 mu = 0.0
@@ -948,7 +955,6 @@ if model_choice in ["SIRD", "SIRDV"]:
         1.0,
         defaults["mu"],
         0.01,
-        help="Higher mortality pressure means more severe disease outcomes.",
     )
 
 if model_choice == "SIRDV":
@@ -958,37 +964,19 @@ if model_choice == "SIRDV":
         1.0,
         defaults["vac"],
         0.01,
-        help="Higher vaccination speed reduces the susceptible population faster.",
     )
 
 days = st.sidebar.slider("Days", 10, 365, defaults["days"])
 
-hospitalization_rate = st.sidebar.slider(
-    "Estimated Hospitalization Rate",
-    0.0,
-    1.0,
-    0.05,
-    0.01,
-)
-
-icu_capacity = st.sidebar.number_input(
-    "ICU Capacity",
-    min_value=0,
-    value=100,
-    step=10,
-)
+hospitalization_rate = st.sidebar.slider("Hospitalization Rate", 0.0, 1.0, 0.05, 0.01)
+icu_capacity = st.sidebar.number_input("ICU Capacity", min_value=0, value=100, step=10)
 
 st.sidebar.markdown("---")
-st.sidebar.subheader("Intervention Timeline")
+st.sidebar.subheader("Intervention Settings")
 
-intervention_enabled = st.sidebar.toggle("Enable intervention", value=False)
+intervention_enabled = st.sidebar.toggle("Enable Intervention", value=False)
 
-intervention_day = st.sidebar.slider(
-    "Intervention Start Day",
-    1,
-    days - 1,
-    min(30, days - 1),
-)
+intervention_day = st.sidebar.slider("Intervention Start Day", 1, days - 1, min(30, days - 1))
 
 reduced_beta = st.sidebar.slider(
     "Post-Intervention Transmission",
@@ -1034,11 +1022,7 @@ if gamma == 0:
 for error in errors:
     st.sidebar.error(error)
 
-run_button = st.sidebar.button(
-    "Run Simulation",
-    type="primary",
-    disabled=bool(errors),
-)
+run_button = st.sidebar.button("Run Simulation", type="primary", disabled=bool(errors))
 
 
 # ---------------------------------------------------
@@ -1064,31 +1048,9 @@ st.markdown(
 ### How to Interpret This Dashboard
 
 This tool is designed to compare **relative outcomes between scenarios**, not to predict exact real-world case counts. 
-It is best used to understand how changes in transmission, intervention timing, recovery, mortality, and vaccination 
-affect trends such as peak infections, attack rate, deaths, and healthcare strain.
+It is best used to understand how changes in transmission, intervention timing, and vaccination affect trends like peak infections and healthcare strain.
 """
 )
-
-with st.expander("Model Assumptions"):
-    st.markdown(
-        """
-- **Closed population:** The model does not include births, migration, or people entering/leaving the population.
-- **Homogeneous mixing:** Everyone is assumed to have the same probability of contact with everyone else.
-- **Deterministic model:** The same inputs produce the same outputs every time; random variation is not included.
-- **Simplified vaccination and intervention effects:** Vaccination and policy changes are represented as simple rate changes.
-"""
-    )
-
-with st.expander("Limitations"):
-    st.markdown(
-        """
-- No age structure or demographic variation.
-- No true geographic spread modeling.
-- No stochastic uncertainty or random outbreak variation.
-- Simplified vaccination, mortality, and hospitalization assumptions.
-- Results are for education and scenario exploration, not official forecasting.
-"""
-    )
 
 
 # ---------------------------------------------------
@@ -1114,7 +1076,7 @@ tabs = st.tabs(
 # ---------------------------------------------------
 if run_button:
     with st.spinner("Running simulation..."):
-        time.sleep(0.4)
+        time.sleep(0.3)
 
         df = run_model_with_intervention(
             model_choice,
@@ -1133,7 +1095,6 @@ if run_button:
         )
 
         st.session_state.simulation_df = df
-
         st.session_state.simulation_params = {
             "model_choice": model_choice,
             "population": population,
@@ -1159,7 +1120,6 @@ if run_button:
 with tabs[0]:
     if st.session_state.simulation_df is None:
         st.info("Choose parameters in the sidebar and click Run Simulation.")
-
     else:
         df = st.session_state.simulation_df
         params = st.session_state.simulation_params
@@ -1169,11 +1129,7 @@ with tabs[0]:
         icu_line = params["icu_capacity"]
 
         if show_percent:
-            plot_df = convert_to_percent(
-                df,
-                get_columns(params["model_choice"]),
-                params["population"],
-            )
+            plot_df = convert_to_percent(df, get_columns(params["model_choice"]), params["population"])
             y_axis_title = "Population (%)"
             icu_line = None
 
@@ -1207,10 +1163,11 @@ with tabs[0]:
             params["hospitalization_rate"],
         )
 
-        recommendation = policy_recommendation(metrics, params["icu_capacity"])
-        risk, risk_style = risk_level(metrics, params["icu_capacity"])
-        phase = outbreak_phase(df)
+        risk_label, risk_description, risk_style = risk_level(metrics, params["icu_capacity"])
         grade = readiness_grade(metrics, params["icu_capacity"], params["vac"])
+        recommendation = policy_recommendation(metrics, params["icu_capacity"])
+        brief = public_health_decision_brief(metrics, risk_label, risk_description, grade, recommendation)
+        icu_status, breach_day = icu_status_text(df, params["hospitalization_rate"], params["icu_capacity"])
 
         baseline_df = run_model(
             params["model_choice"],
@@ -1233,21 +1190,14 @@ with tabs[0]:
         )
 
         impact_score = policy_impact_score(metrics, baseline_metrics, params["icu_capacity"])
-        brief = executive_brief(metrics, phase, recommendation, grade)
 
-        st.subheader("Executive Summary")
+        st.subheader("Public Health Decision Brief")
 
         k1, k2, k3, k4, k5 = st.columns(5)
-
-        k1.metric("Risk Level", risk)
+        k1.metric("Risk Level", f"{risk_label} ({risk_description})")
         k2.metric("R₀", f"{metrics['R0']:.2f}")
         k3.metric("Peak Day", metrics["Day of Peak"])
-        k4.metric(
-            "ICU Status",
-            "Exceeded"
-            if metrics["Estimated Peak Hospitalizations"] > params["icu_capacity"]
-            else "Within Capacity",
-        )
+        k4.metric("ICU Status", icu_status)
         k5.metric("Readiness Grade", grade)
 
         if risk_style == "error":
@@ -1257,29 +1207,41 @@ with tabs[0]:
         else:
             st.success(brief)
 
+        st.markdown(f"**{bottom_line(metrics, params['icu_capacity'])}**")
+
+        st.subheader("Key Metrics")
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Peak % Infected", f"{metrics['Peak Infected %']:.1f}%")
+        c2.metric("Total Infected / Attack Rate", f"{metrics['Attack Rate']:.1f}%")
+        c3.metric("Final Deaths", f"{metrics['Deaths']:,.0f}")
+        c4.metric("ICU Breach Day", breach_day if breach_day is not None else "N/A")
+
         st.subheader("Simulation Dashboard")
         st.plotly_chart(fig, use_container_width=True)
 
-        c1, c2, c3, c4 = st.columns(4)
-        c5, c6, c7, c8 = st.columns(4)
+        with st.container(border=True):
+            st.markdown("### Structured Insight Box")
 
-        c1.metric("Peak Infected", f"{metrics['Peak Infected']:,.0f}")
-        c2.metric("Day of Peak", f"{metrics['Day of Peak']}")
-        c3.metric("Attack Rate", f"{metrics['Attack Rate']:.1f}%")
-        c4.metric("Outbreak Phase", phase)
+            s1, s2, s3 = st.columns(3)
+            s1.markdown(f"**Peak Infection Day:** {metrics['Day of Peak']}")
+            s1.markdown(f"**Peak Infected %:** {metrics['Peak Infected %']:.1f}%")
+            s2.markdown(f"**Estimated Attack Rate %:** {metrics['Attack Rate']:.1f}%")
+            s2.markdown(f"**R₀:** {metrics['R0']:.2f}")
+            s3.markdown(f"**ICU Status:** {icu_status}")
+            s3.markdown(f"**Readiness Grade:** {grade}")
 
-        c5.metric("Recovered", f"{metrics['Recovered']:,.0f}")
-        c6.metric("Deaths", f"{metrics['Deaths']:,.0f}")
-        c7.metric("Vaccinated", f"{metrics['Vaccinated']:,.0f}")
-        c8.metric("Policy Impact Score", f"{impact_score:.1f} / 100")
+            st.markdown("#### Recommendation")
+            st.markdown(
+                """
+- Reduce transmission through earlier intervention
+- Increase vaccination rate
+- Monitor ICU capacity
+- Use scenario comparison to evaluate policy timing
+"""
+            )
 
         st.subheader("Healthcare Capacity Timeline")
-        fig_health = make_healthcare_timeline(
-            df,
-            params["hospitalization_rate"],
-            params["icu_capacity"],
-            template,
-        )
+        fig_health = make_healthcare_timeline(df, params["hospitalization_rate"], params["icu_capacity"], template)
         st.plotly_chart(fig_health, use_container_width=True)
 
         if params["intervention_enabled"]:
@@ -1287,29 +1249,51 @@ with tabs[0]:
             peak_reduction = baseline_metrics["Peak Infected"] - metrics["Peak Infected"]
 
             st.subheader("Intervention Impact Score")
-
             i1, i2, i3 = st.columns(3)
             i1.metric("Estimated Infections Prevented", f"{infections_prevented:,.0f}")
             i2.metric("Peak Reduction", f"{peak_reduction:,.0f}")
             i3.metric("Policy Effectiveness", f"{impact_score:.1f} / 100")
 
         st.subheader("Policy Recommendation")
-
-        if "Urgent" in recommendation:
-            st.error(recommendation)
-        elif "Strong" in recommendation or "High" in recommendation:
+        if "Strong" in recommendation:
             st.warning(recommendation)
         else:
             st.success(recommendation)
 
         st.subheader("Automated Interpretation")
-
         for insight in insights:
             st.info(insight)
 
+        with st.expander("Method Notes"):
+            st.markdown(
+                """
+- **Peak infected** = highest infected count during simulation.
+- **Peak day** = day when infected count is highest.
+- **Attack rate** = final recovered + final deaths divided by total population.
+- **ICU strain** = infected count × hospitalization rate compared with ICU capacity.
+- **R₀** = beta / gamma.
+"""
+            )
+
+        with st.expander("Parameter Guide"):
+            st.markdown(
+                """
+- **Beta** = transmission rate.
+- **Gamma** = recovery rate.
+- **Mu** = mortality rate.
+- **Vaccination rate** = rate susceptible people move into vaccinated group.
+- **Intervention start day** = when reduced transmission or increased vaccination begins.
+- **ICU capacity** = available critical care threshold.
+"""
+            )
+
+        st.subheader("Example Scenario Walkthrough")
+        st.info(
+            "Try comparing Late Response vs Early Intervention. Notice how earlier intervention can reduce peak infections, delay the peak, and lower ICU strain."
+        )
+
         if show_total_check:
             st.subheader("Population Conservation Check")
-
             df_check = df.copy()
             df_check["Total"] = df_check[
                 ["Susceptible", "Infected", "Recovered", "Dead", "Vaccinated"]
@@ -1322,12 +1306,11 @@ with tabs[0]:
             check2.metric("Maximum Population Drift", f"{max_drift:,.4f}")
 
         st.subheader("Download Center")
-
         dl1, dl2, dl3, dl4 = st.columns(4)
 
         with dl1:
             st.download_button(
-                "Download CSV",
+                "Download Simulation CSV",
                 df.to_csv(index=False).encode(),
                 file_name=f"{params['model_choice'].lower()}_simulation_results.csv",
                 mime="text/csv",
@@ -1343,30 +1326,24 @@ with tabs[0]:
 
         with dl3:
             st.download_button(
-                "Download Full Report",
+                "Download Text Report",
                 create_full_report(
                     params,
                     metrics,
                     insights,
                     recommendation,
-                    phase,
                     grade,
                     brief,
+                    f"{risk_label} ({risk_description})",
+                    icu_status,
                     impact_score,
                 ),
                 file_name=f"{params['model_choice'].lower()}_simulation_report.txt",
                 mime="text/plain",
             )
 
-            st.download_button(
-                "Download Scenario Summary",
-                create_scenario_summary(metrics, phase, grade, recommendation),
-                file_name=f"{params['model_choice'].lower()}_scenario_summary.txt",
-                mime="text/plain",
-            )
-
         with dl4:
-            plot_download_buttons(fig, params["model_choice"])
+            plot_download_buttons(fig, f"{params['model_choice'].lower()}_simulation")
 
 
 # ---------------------------------------------------
@@ -1375,16 +1352,19 @@ with tabs[0]:
 with tabs[1]:
     if st.session_state.simulation_df is None:
         st.info("Run a simulation first to view the data table.")
-
     else:
         st.subheader("Simulation Data")
         st.dataframe(st.session_state.simulation_df, use_container_width=True)
 
-        st.subheader("Quick Summary")
-        st.dataframe(
-            st.session_state.simulation_df.describe().round(2),
-            use_container_width=True,
+        st.download_button(
+            "Download Data Table CSV",
+            st.session_state.simulation_df.to_csv(index=False).encode(),
+            file_name="simulation_data_table.csv",
+            mime="text/csv",
         )
+
+        st.subheader("Quick Summary")
+        st.dataframe(st.session_state.simulation_df.describe().round(2), use_container_width=True)
 
 
 # ---------------------------------------------------
@@ -1397,7 +1377,7 @@ with tabs[2]:
         """
 ## SIRDV Model Overview
 
-The SIRDV model divides a population into five compartments:
+The model divides a population into five compartments:
 
 - **S = Susceptible:** People who can still become infected.
 - **I = Infected:** People currently infected and able to transmit disease.
@@ -1412,29 +1392,10 @@ The SIRDV model divides a population into five compartments:
 - **Mu / Mortality Rate:** Controls how quickly infected people move into the deceased compartment.
 - **Vaccination Rate:** Controls how quickly susceptible people become vaccinated.
 
-## Dashboard Features
+## How to Interpret This Dashboard
 
-| Feature | Purpose |
-|---|---|
-| R₀ | Estimates outbreak growth potential |
-| Attack Rate | Shows share infected or dead |
-| ICU Capacity | Tests healthcare strain |
-| Outbreak Phase | Labels epidemic stage |
-| Readiness Grade | Summarizes public health preparedness |
-| Policy Impact Score | Estimates effectiveness of interventions |
-| Timeline Callouts | Highlights peak, intervention start, and ICU crossing |
-| Real-World Mode | Makes labels easier for non-technical users |
-| Sensitivity Analysis | Tests parameter influence |
-| Location Risk Heat Map | Shows simulated local risk intensity |
-
-## Real-World Uses
-
-- COVID-19 outbreak analysis
-- Seasonal flu forecasting
-- Vaccine planning
-- Hospital capacity planning
-- Public health education
-- Scenario-based policy discussion
+This tool is designed to compare **relative outcomes between scenarios**, not to predict exact real-world case counts. 
+It is best used to understand how changes in transmission, intervention timing, and vaccination affect trends like peak infections and healthcare strain.
 """
     )
 
@@ -1443,105 +1404,169 @@ The SIRDV model divides a population into five compartments:
 # TAB 4: COMPARE SCENARIOS
 # ---------------------------------------------------
 with tabs[3]:
-    st.subheader("Compare Two Scenarios")
-    st.caption("Compare custom Scenario A and Scenario B, plus automatic best/current/worst cases.")
+    st.subheader("Compare Scenarios")
+    st.caption("Use one-click presets or manually adjust Scenario A and Scenario B.")
 
     scenario_presets = {
-        "Custom": {},
+        "Baseline": {
+            "beta_multiplier": 1.00,
+            "gamma_multiplier": 1.00,
+            "mu_multiplier": 1.00,
+            "vac_boost": 0.00,
+            "intervention_enabled": False,
+            "intervention_day": intervention_day,
+            "post_beta_multiplier": 1.00,
+            "post_vac_boost": 0.00,
+        },
         "Early Intervention": {
-            "beta_multiplier": 0.60,
-            "gamma_multiplier": 1.10,
-            "vac_boost": 0.04,
+            "beta_multiplier": 1.00,
+            "gamma_multiplier": 1.00,
+            "mu_multiplier": 1.00,
+            "vac_boost": 0.02,
+            "intervention_enabled": True,
+            "intervention_day": min(15, days - 1),
+            "post_beta_multiplier": 0.50,
+            "post_vac_boost": 0.06,
         },
         "Late Response": {
             "beta_multiplier": 1.05,
             "gamma_multiplier": 1.00,
+            "mu_multiplier": 1.00,
             "vac_boost": 0.00,
+            "intervention_enabled": True,
+            "intervention_day": min(60, days - 1),
+            "post_beta_multiplier": 0.75,
+            "post_vac_boost": 0.02,
         },
         "No Vaccination": {
             "beta_multiplier": 1.00,
             "gamma_multiplier": 1.00,
+            "mu_multiplier": 1.00,
             "vac_override": 0.00,
+            "intervention_enabled": False,
+            "intervention_day": intervention_day,
+            "post_beta_multiplier": 1.00,
+            "post_vac_boost": 0.00,
         },
         "Aggressive Vaccination": {
-            "beta_multiplier": 0.80,
+            "beta_multiplier": 0.85,
             "gamma_multiplier": 1.00,
+            "mu_multiplier": 1.00,
             "vac_boost": 0.10,
+            "intervention_enabled": True,
+            "intervention_day": min(10, days - 1),
+            "post_beta_multiplier": 0.55,
+            "post_vac_boost": 0.12,
         },
     }
 
-    preset_a = st.selectbox("Scenario A Preset", list(scenario_presets.keys()), index=0)
-    preset_b = st.selectbox("Scenario B Preset", list(scenario_presets.keys()), index=1)
+    def apply_comparison_preset(base_beta, base_gamma, base_mu, base_vac, preset_name):
+        config = scenario_presets[preset_name]
 
-    def apply_policy_preset(base_beta, base_gamma, base_mu, base_vac, preset_name):
-        preset_config = scenario_presets[preset_name]
+        new_beta = base_beta * config.get("beta_multiplier", 1.0)
+        new_gamma = base_gamma * config.get("gamma_multiplier", 1.0)
+        new_mu = base_mu * config.get("mu_multiplier", 1.0)
+        new_vac = base_vac + config.get("vac_boost", 0.0)
 
-        new_beta = base_beta * preset_config.get("beta_multiplier", 1.0)
-        new_gamma = base_gamma * preset_config.get("gamma_multiplier", 1.0)
-        new_mu = base_mu
-        new_vac = base_vac + preset_config.get("vac_boost", 0.0)
+        if "vac_override" in config:
+            new_vac = config["vac_override"]
 
-        if "vac_override" in preset_config:
-            new_vac = preset_config["vac_override"]
+        return {
+            "beta": min(max(new_beta, 0.0), 1.0),
+            "gamma": min(max(new_gamma, 0.0), 1.0),
+            "mu": min(max(new_mu, 0.0), 1.0),
+            "vac": min(max(new_vac, 0.0), 1.0),
+            "intervention_enabled": config.get("intervention_enabled", False),
+            "intervention_day": config.get("intervention_day", intervention_day),
+            "reduced_beta": min(max(base_beta * config.get("post_beta_multiplier", 1.0), 0.0), 1.0),
+            "increased_vac": min(max(base_vac + config.get("post_vac_boost", 0.0), 0.0), 1.0),
+        }
 
-        return (
-            min(max(new_beta, 0.0), 1.0),
-            min(max(new_gamma, 0.0), 1.0),
-            min(max(new_mu, 0.0), 1.0),
-            min(max(new_vac, 0.0), 1.0),
-        )
+    col_preset_a, col_preset_b = st.columns(2)
+    with col_preset_a:
+        preset_a = st.selectbox("Scenario A Preset", list(scenario_presets.keys()), index=0)
+    with col_preset_b:
+        preset_b = st.selectbox("Scenario B Preset", list(scenario_presets.keys()), index=1)
 
-    default_beta_a, default_gamma_a, default_mu_a, default_vac_a = apply_policy_preset(
-        beta, gamma, mu, vac, preset_a
-    )
-
-    default_beta_b, default_gamma_b, default_mu_b, default_vac_b = apply_policy_preset(
-        beta, gamma, mu, vac, preset_b
-    )
+    defaults_a = apply_comparison_preset(beta, gamma, mu, vac, preset_a)
+    defaults_b = apply_comparison_preset(beta, gamma, mu, vac, preset_b)
 
     with st.form("comparison_form"):
-        colA, colB = st.columns(2)
+        col_a, col_b = st.columns(2)
 
-        with colA:
+        with col_a:
             st.markdown("### Scenario A")
+            beta_a = st.slider("Transmission Rate A", 0.0, 1.0, defaults_a["beta"], 0.01)
+            gamma_a = st.slider("Recovery Rate A", 0.0, 1.0, defaults_a["gamma"], 0.01)
 
-            beta_a = st.slider("Beta A", 0.0, 1.0, default_beta_a, 0.01)
-            gamma_a = st.slider("Gamma A", 0.0, 1.0, default_gamma_a, 0.01)
-
-            mu_a = default_mu_a
-            vac_a = default_vac_a
+            mu_a = defaults_a["mu"]
+            vac_a = defaults_a["vac"]
 
             if model_choice in ["SIRD", "SIRDV"]:
-                mu_a = st.slider("Mu A", 0.0, 1.0, default_mu_a, 0.01)
+                mu_a = st.slider("Mortality Rate A", 0.0, 1.0, defaults_a["mu"], 0.01)
 
             if model_choice == "SIRDV":
-                vac_a = st.slider("Vaccination A", 0.0, 1.0, default_vac_a, 0.01)
+                vac_a = st.slider("Vaccination Rate A", 0.0, 1.0, defaults_a["vac"], 0.01)
 
-        with colB:
+            intervention_a = st.checkbox("Enable Intervention A", value=defaults_a["intervention_enabled"])
+            intervention_day_a = st.slider("Intervention Day A", 1, days - 1, defaults_a["intervention_day"])
+            reduced_beta_a = st.slider("Post-Intervention Transmission A", 0.0, 1.0, defaults_a["reduced_beta"], 0.01)
+            increased_vac_a = st.slider("Post-Intervention Vaccination A", 0.0, 1.0, defaults_a["increased_vac"], 0.01)
+
+        with col_b:
             st.markdown("### Scenario B")
+            beta_b = st.slider("Transmission Rate B", 0.0, 1.0, defaults_b["beta"], 0.01)
+            gamma_b = st.slider("Recovery Rate B", 0.0, 1.0, defaults_b["gamma"], 0.01)
 
-            beta_b = st.slider("Beta B", 0.0, 1.0, default_beta_b, 0.01)
-            gamma_b = st.slider("Gamma B", 0.0, 1.0, default_gamma_b, 0.01)
-
-            mu_b = default_mu_b
-            vac_b = default_vac_b
+            mu_b = defaults_b["mu"]
+            vac_b = defaults_b["vac"]
 
             if model_choice in ["SIRD", "SIRDV"]:
-                mu_b = st.slider("Mu B", 0.0, 1.0, default_mu_b, 0.01)
+                mu_b = st.slider("Mortality Rate B", 0.0, 1.0, defaults_b["mu"], 0.01)
 
             if model_choice == "SIRDV":
-                vac_b = st.slider("Vaccination B", 0.0, 1.0, default_vac_b, 0.01)
+                vac_b = st.slider("Vaccination Rate B", 0.0, 1.0, defaults_b["vac"], 0.01)
 
-        compare_clicked = st.form_submit_button(
-            "Run Comparison",
-            type="primary",
-            disabled=bool(errors),
-        )
+            intervention_b = st.checkbox("Enable Intervention B", value=defaults_b["intervention_enabled"])
+            intervention_day_b = st.slider("Intervention Day B", 1, days - 1, defaults_b["intervention_day"])
+            reduced_beta_b = st.slider("Post-Intervention Transmission B", 0.0, 1.0, defaults_b["reduced_beta"], 0.01)
+            increased_vac_b = st.slider("Post-Intervention Vaccination B", 0.0, 1.0, defaults_b["increased_vac"], 0.01)
+
+        compare_clicked = st.form_submit_button("Run Comparison", type="primary", disabled=bool(errors))
 
     if compare_clicked:
         with st.spinner("Comparing scenarios..."):
-            df_a = run_model(model_choice, population, infected, recovered, beta_a, gamma_a, mu_a, vac_a, days)
-            df_b = run_model(model_choice, population, infected, recovered, beta_b, gamma_b, mu_b, vac_b, days)
+            df_a = run_model_with_intervention(
+                model_choice,
+                population,
+                infected,
+                recovered,
+                beta_a,
+                gamma_a,
+                mu_a,
+                vac_a,
+                days,
+                intervention_a,
+                intervention_day_a,
+                reduced_beta_a,
+                increased_vac_a,
+            )
+
+            df_b = run_model_with_intervention(
+                model_choice,
+                population,
+                infected,
+                recovered,
+                beta_b,
+                gamma_b,
+                mu_b,
+                vac_b,
+                days,
+                intervention_b,
+                intervention_day_b,
+                reduced_beta_b,
+                increased_vac_b,
+            )
 
             st.session_state.compare_results = {
                 "df_a": df_a,
@@ -1554,11 +1579,14 @@ with tabs[3]:
                 "gamma_b": gamma_b,
                 "mu_b": mu_b,
                 "vac_b": vac_b,
+                "intervention_a": intervention_a,
+                "intervention_b": intervention_b,
+                "intervention_day_a": intervention_day_a,
+                "intervention_day_b": intervention_day_b,
             }
 
     if st.session_state.compare_results is not None:
         result = st.session_state.compare_results
-
         df_a = result["df_a"]
         df_b = result["df_b"]
 
@@ -1587,16 +1615,16 @@ with tabs[3]:
             value_b = metrics_b[metric_name]
 
             if isinstance(value_a, (int, float)) and isinstance(value_b, (int, float)):
-                difference = value_b - value_a
+                change = value_b - value_a
             else:
-                difference = "Changed" if value_a != value_b else "No Change"
+                change = "Changed" if value_a != value_b else "No Change"
 
             comparison_rows.append(
                 {
                     "Metric": metric_name,
                     "Scenario A": value_a,
                     "Scenario B": value_b,
-                    "Difference / Change": difference,
+                    "Change": change,
                 }
             )
 
@@ -1606,109 +1634,44 @@ with tabs[3]:
         st.dataframe(comparison_table, use_container_width=True)
 
         st.subheader("Primary Difference Summary")
-
-        d1, d2 = st.columns(2)
-        d3, d4 = st.columns(2)
-
+        d1, d2, d3, d4 = st.columns(4)
         d1.metric("Transmission Rate Difference", f"{result['beta_b'] - result['beta_a']:.3f}")
-        d2.metric("Recovery Rate Difference", f"{result['gamma_b'] - result['gamma_a']:.3f}")
-        d3.metric("Mortality Rate Difference", f"{result['mu_b'] - result['mu_a']:.3f}")
-        d4.metric("Vaccination Rate Difference", f"{result['vac_b'] - result['vac_a']:.3f}")
+        d2.metric("Intervention Timing Difference", f"{result['intervention_day_b'] - result['intervention_day_a']} days")
+        d3.metric("Vaccination Rate Difference", f"{result['vac_b'] - result['vac_a']:.3f}")
+        d4.metric(
+            "Mortality / Recovery Difference",
+            f"μ {result['mu_b'] - result['mu_a']:.3f} | γ {result['gamma_b'] - result['gamma_a']:.3f}",
+        )
 
         score = calculate_policy_effectiveness_score(metrics_a, metrics_b)
+        st.metric("Policy Effectiveness Score", f"{score} / 100")
 
-        st.subheader("Policy Effectiveness Score")
-        st.metric("Scenario B Policy Effectiveness Score", f"{score}/100")
-
-        st.subheader("Auto Key Insight")
+        st.subheader("Auto Insight Generator")
         st.info(generate_comparison_insight(metrics_a, metrics_b))
 
-        fig_compare = go.Figure()
-
-        fig_compare.add_trace(
-            go.Scatter(
-                x=df_a["Day"],
-                y=df_a["Infected"],
-                mode="lines",
-                name="Scenario A Infected",
-                line=dict(width=4),
-            )
-        )
-
-        fig_compare.add_trace(
-            go.Scatter(
-                x=df_b["Day"],
-                y=df_b["Infected"],
-                mode="lines",
-                name="Scenario B Infected",
-                line=dict(width=4, dash="dash"),
-            )
-        )
-
-        peak_day_a = int(df_a["Infected"].idxmax())
-        peak_value_a = float(df_a["Infected"].max())
-
-        peak_day_b = int(df_b["Infected"].idxmax())
-        peak_value_b = float(df_b["Infected"].max())
-
-        fig_compare.add_trace(
-            go.Scatter(
-                x=[peak_day_a],
-                y=[peak_value_a],
-                mode="markers",
-                name="Scenario A Peak",
-                marker=dict(size=12),
-            )
-        )
-
-        fig_compare.add_trace(
-            go.Scatter(
-                x=[peak_day_b],
-                y=[peak_value_b],
-                mode="markers",
-                name="Scenario B Peak",
-                marker=dict(size=12),
-            )
-        )
-
-        if hospitalization_rate > 0:
-            infected_icu_threshold = icu_capacity / hospitalization_rate
-
-            fig_compare.add_hline(
-                y=infected_icu_threshold,
-                line_dash="dash",
-                line_color="#f59e0b",
-                annotation_text="ICU Threshold",
-                annotation_position="top left",
-            )
-
-        if intervention_enabled:
-            fig_compare.add_vline(
-                x=intervention_day,
-                line_dash="dash",
-                line_color="#22c55e",
-                annotation_text="Intervention Start",
-                annotation_position="top right",
-            )
-
-        fig_compare.update_layout(
-            title="Overlay Comparison Plot: Scenario A vs Scenario B",
-            xaxis_title="Day",
-            yaxis_title="Infected Population",
-            template=template,
-            hovermode="x unified",
-            height=650,
+        fig_compare = make_overlay_comparison_plot(
+            df_a,
+            df_b,
+            template,
+            hospitalization_rate,
+            icu_capacity,
+            intervention_day_a=result["intervention_day_a"] if result["intervention_a"] else None,
+            intervention_day_b=result["intervention_day_b"] if result["intervention_b"] else None,
         )
 
         st.subheader("Overlay Comparison Plot")
         st.plotly_chart(fig_compare, use_container_width=True)
 
+        csv_bytes = comparison_table.to_csv(index=False).encode()
+
         st.download_button(
-            "Download Comparison Report CSV",
-            comparison_table.to_csv(index=False).encode(),
-            file_name="scenario_comparison_report.csv",
+            "Download Comparison Results CSV",
+            csv_bytes,
+            file_name="scenario_comparison_results.csv",
             mime="text/csv",
         )
+
+        plot_download_buttons(fig_compare, "scenario_comparison")
 
 
 # ---------------------------------------------------
@@ -1718,19 +1681,9 @@ with tabs[4]:
     st.subheader("Sensitivity Analysis")
     st.caption("Test how changing one parameter affects infection curves.")
 
-    parameter_choice = st.selectbox(
-        "Parameter to vary",
-        ["Beta", "Gamma", "Mu", "Vaccination Rate"],
-    )
+    parameter_choice = st.selectbox("Parameter to vary", ["Beta", "Gamma", "Mu", "Vaccination Rate"])
 
-    low_value, high_value = st.slider(
-        "Parameter Range",
-        0.0,
-        1.0,
-        (0.20, 0.80),
-        0.01,
-    )
-
+    low_value, high_value = st.slider("Parameter Range", 0.0, 1.0, (0.20, 0.80), 0.01)
     num_runs = st.slider("Number of Scenarios", 3, 9, 5, 1)
 
     if st.button("Run Sensitivity Analysis", type="primary", disabled=bool(errors)):
@@ -1757,27 +1710,10 @@ with tabs[4]:
                 elif parameter_choice == "Vaccination Rate":
                     vac_s = value
 
-                df_s = run_model(
-                    model_choice,
-                    population,
-                    infected,
-                    recovered,
-                    beta_s,
-                    gamma_s,
-                    mu_s,
-                    vac_s,
-                    days,
-                )
-
+                df_s = run_model(model_choice, population, infected, recovered, beta_s, gamma_s, mu_s, vac_s, days)
                 m = metrics_from_df(df_s, beta_s, gamma_s, population, hospitalization_rate)
 
-                sensitivity_data.append(
-                    {
-                        "value": value,
-                        "df": df_s,
-                        "metrics": m,
-                    }
-                )
+                sensitivity_data.append({"value": value, "df": df_s, "metrics": m})
 
         st.session_state.sensitivity_results = {
             "parameter": parameter_choice,
@@ -1786,42 +1722,7 @@ with tabs[4]:
 
     if st.session_state.sensitivity_results is not None:
         result = st.session_state.sensitivity_results
-
         fig_sens = go.Figure()
-
-        infected_matrix = pd.DataFrame(
-            {
-                f"{result['parameter']}={item['value']:.2f}": item["df"]["Infected"]
-                for item in result["data"]
-            }
-        )
-
-        lower_band = infected_matrix.min(axis=1)
-        upper_band = infected_matrix.max(axis=1)
-
-        fig_sens.add_trace(
-            go.Scatter(
-                x=result["data"][0]["df"]["Day"],
-                y=upper_band,
-                mode="lines",
-                line=dict(width=0),
-                showlegend=False,
-                hoverinfo="skip",
-            )
-        )
-
-        fig_sens.add_trace(
-            go.Scatter(
-                x=result["data"][0]["df"]["Day"],
-                y=lower_band,
-                mode="lines",
-                fill="tonexty",
-                fillcolor="rgba(214,39,40,0.18)",
-                line=dict(width=0),
-                name="Uncertainty Band",
-                hoverinfo="skip",
-            )
-        )
 
         for item in result["data"]:
             fig_sens.add_trace(
@@ -1859,7 +1760,7 @@ with tabs[4]:
                 {
                     result["parameter"]: round(item["value"], 3),
                     "Peak Infected": round(item["metrics"]["Peak Infected"], 2),
-                    "Day of Peak": item["metrics"]["Day of Peak"],
+                    "Peak Day": item["metrics"]["Day of Peak"],
                     "R0": round(item["metrics"]["R0"], 2),
                     "Attack Rate (%)": round(item["metrics"]["Attack Rate"], 2),
                     "ICU Overflow": "Yes"
@@ -1873,13 +1774,8 @@ with tabs[4]:
         st.subheader("Sensitivity Summary Table")
         st.dataframe(sens_table, use_container_width=True)
 
-        if sens_table["ICU Overflow"].eq("Yes").any():
-            st.warning("Higher-risk sensitivity scenarios exceed ICU capacity.")
-        else:
-            st.success("None of the sensitivity scenarios exceed ICU capacity.")
-
         st.download_button(
-            "Download Sensitivity Results",
+            "Download Sensitivity Results CSV",
             sens_table.to_csv(index=False).encode(),
             file_name="sensitivity_analysis_results.csv",
             mime="text/csv",
@@ -1894,17 +1790,15 @@ with tabs[5]:
 
     if st.session_state.simulation_df is None:
         st.info("Run a simulation first to use the day-by-day view.")
-
     else:
         df = st.session_state.simulation_df
 
         day = st.slider("Select Day", 0, len(df) - 1, 0)
         row = df.iloc[day]
 
-        st.markdown(f"### Day {day}")
+        st.markdown(f"### Day {int(row['Day'])}")
 
         d1, d2, d3, d4, d5 = st.columns(5)
-
         d1.metric("Susceptible", f"{row['Susceptible']:,.0f}")
         d2.metric("Infected", f"{row['Infected']:,.0f}")
         d3.metric("Recovered", f"{row['Recovered']:,.0f}")
@@ -1927,7 +1821,7 @@ with tabs[5]:
         )
 
         fig_bar.update_layout(
-            title=f"Compartment Counts on Day {day}",
+            title=f"Compartment Counts on Day {int(row['Day'])}",
             yaxis_title="Population",
             template=template,
             height=500,
@@ -2013,7 +1907,7 @@ with tabs[6]:
                 {
                     "Intervention Day": item["Intervention Day"],
                     "Peak Infected": round(item["metrics"]["Peak Infected"], 2),
-                    "Day of Peak": item["metrics"]["Day of Peak"],
+                    "Peak Day": item["metrics"]["Day of Peak"],
                     "Attack Rate (%)": round(item["metrics"]["Attack Rate"], 2),
                     "ICU Overflow": "Yes"
                     if item["metrics"]["Estimated Peak Hospitalizations"] > icu_capacity
@@ -2026,18 +1920,22 @@ with tabs[6]:
         st.subheader("Timing Summary Table")
         st.dataframe(timing_table, use_container_width=True)
 
+        st.download_button(
+            "Download Timing Results CSV",
+            timing_table.to_csv(index=False).encode(),
+            file_name="intervention_timing_results.csv",
+            mime="text/csv",
+        )
+
 
 # ---------------------------------------------------
-# TAB 8: LOCATION-BASED RISK HEAT MAP
+# TAB 8: RISK HEAT MAP
 # ---------------------------------------------------
 with tabs[7]:
-    st.subheader("Location-Based Risk Heat Map")
+    st.subheader("Risk Heat Map")
     st.caption("Simulated local risk intensity based on the selected location and current model assumptions.")
 
-    st.info(
-        "Higher intensity indicates higher simulated infection pressure/risk. "
-        "Points are randomly jittered around the selected location to create a more natural-looking local risk surface."
-    )
+    st.info("Higher intensity indicates higher simulated infection pressure/risk.")
 
     locations = {
         "New York, NY": (40.7128, -74.0060),
@@ -2064,25 +1962,8 @@ with tabs[7]:
 
     if st.button("Generate Location Risk Heat Map", type="primary", disabled=bool(errors)):
         with st.spinner("Generating simulated local risk map..."):
-            base_df = run_model(
-                model_choice,
-                population,
-                infected,
-                recovered,
-                beta,
-                gamma,
-                mu,
-                vac,
-                days,
-            )
-
-            base_metrics = metrics_from_df(
-                base_df,
-                beta,
-                gamma,
-                population,
-                hospitalization_rate,
-            )
+            base_df = run_model(model_choice, population, infected, recovered, beta, gamma, mu, vac, days)
+            base_metrics = metrics_from_df(base_df, beta, gamma, population, hospitalization_rate)
 
             center_lat, center_lon = locations[selected_location]
             risk_base = base_metrics[heat_metric]
@@ -2092,18 +1973,18 @@ with tabs[7]:
             for _ in range(num_heat_points):
                 lat_offset = random.gauss(0, spread / 3)
                 lon_offset = random.gauss(0, spread / 3)
-
                 distance = math.sqrt(lat_offset**2 + lon_offset**2)
                 decay = max(0.15, 1 - (distance / spread))
-
                 local_noise = random.uniform(0.7, 1.3)
-
                 intensity = risk_base * decay * local_noise
 
-                lat = center_lat + lat_offset
-                lon = center_lon + lon_offset
-
-                heat_points.append([lat, lon, intensity])
+                heat_points.append(
+                    [
+                        center_lat + lat_offset,
+                        center_lon + lon_offset,
+                        intensity,
+                    ]
+                )
 
             st.session_state.heatmap_results = {
                 "location": selected_location,
@@ -2116,10 +1997,7 @@ with tabs[7]:
     if st.session_state.heatmap_results is not None:
         result = st.session_state.heatmap_results
 
-        st.metric(
-            f"Base Simulated Risk: {result['metric']}",
-            f"{result['risk_base']:,.2f}",
-        )
+        st.metric(f"Base Simulated Risk: {result['metric']}", f"{result['risk_base']:,.2f}")
 
         if FOLIUM_AVAILABLE:
             center_lat, center_lon = result["center"]
@@ -2130,12 +2008,7 @@ with tabs[7]:
                 tiles="CartoDB positron",
             )
 
-            HeatMap(
-                result["points"],
-                radius=22,
-                blur=20,
-                max_zoom=13,
-            ).add_to(fmap)
+            HeatMap(result["points"], radius=22, blur=20, max_zoom=13).add_to(fmap)
 
             folium.Marker(
                 [center_lat, center_lon],
@@ -2144,7 +2017,6 @@ with tabs[7]:
             ).add_to(fmap)
 
             st_folium(fmap, width=None, height=600)
-
         else:
             st.info(
                 "For interactive map tiles, add `folium` and `streamlit-folium` to requirements.txt. Showing Plotly fallback map."
@@ -2165,10 +2037,7 @@ with tabs[7]:
 
             fig_map.update_layout(
                 mapbox_style="open-street-map",
-                mapbox_center={
-                    "lat": result["center"][0],
-                    "lon": result["center"][1],
-                },
+                mapbox_center={"lat": result["center"][0], "lon": result["center"][1]},
                 mapbox_zoom=10,
                 height=650,
                 margin=dict(l=0, r=0, t=40, b=0),
@@ -2183,7 +2052,7 @@ with tabs[7]:
         )
 
         st.download_button(
-            "Download Heat Map Risk Points",
+            "Download Heat Map Risk Points CSV",
             heat_df_download.to_csv(index=False).encode(),
             file_name="location_risk_heatmap_points.csv",
             mime="text/csv",
@@ -2194,25 +2063,24 @@ with tabs[7]:
 # TAB 9: METHODS & ASSUMPTIONS
 # ---------------------------------------------------
 with tabs[8]:
-    st.subheader("Model Transparency & Interpretation")
+    st.subheader("Methods & Assumptions")
 
     st.markdown(
         """
 ## How to Interpret This Dashboard
 
 This tool is designed to compare **relative outcomes between scenarios**, not to predict exact real-world case counts. 
-It is best used to understand how changes in transmission, intervention timing, vaccination, recovery, and mortality 
-affect trends like peak infections, healthcare strain, and final outcomes.
+It is best used to understand how changes in transmission, intervention timing, and vaccination affect trends like peak infections and healthcare strain.
 """
     )
 
     with st.expander("Model Assumptions"):
         st.markdown(
             """
-- **Closed population:** No births, migration, or people entering/leaving the system.
-- **Homogeneous mixing:** Everyone is assumed to have equal contact probability.
-- **Deterministic model:** Results do not include random variation.
-- **Simplified vaccination and intervention effects:** Vaccination and intervention policies are represented through simplified rate changes.
+- **Closed population**
+- **Homogeneous mixing**
+- **Deterministic model**
+- **Simplified vaccination and intervention effects**
 """
         )
 
@@ -2221,9 +2089,32 @@ affect trends like peak infections, healthcare strain, and final outcomes.
             """
 - No age structure or demographic variation.
 - No true geographic spread modeling.
-- No stochastic uncertainty.
-- Simplified vaccination and mortality assumptions.
-- Location-based heat maps are simulated and are not based on real surveillance data.
+- No stochastic uncertainty or random outbreak variation.
+- Simplified vaccination, mortality, and hospitalization assumptions.
+- Educational scenario exploration only, not official forecasting.
+"""
+        )
+
+    with st.expander("Method Notes"):
+        st.markdown(
+            """
+- **Peak infected** = highest infected count during simulation.
+- **Peak day** = day when infected count is highest.
+- **Attack rate** = final recovered + final deaths divided by total population.
+- **ICU strain** = infected count × hospitalization rate compared with ICU capacity.
+- **R₀** = beta / gamma.
+"""
+        )
+
+    with st.expander("Parameter Guide"):
+        st.markdown(
+            """
+- **Beta** = transmission rate.
+- **Gamma** = recovery rate.
+- **Mu** = mortality rate.
+- **Vaccination rate** = rate susceptible people move into vaccinated group.
+- **Intervention start day** = when reduced transmission or increased vaccination begins.
+- **ICU capacity** = available critical care threshold.
 """
         )
 
@@ -2247,12 +2138,12 @@ affect trends like peak infections, healthcare strain, and final outcomes.
 
     st.markdown(
         """
-## References
+## Educational References
 
 - Kermack, W. O., & McKendrick, A. G. (1927). *A Contribution to the Mathematical Theory of Epidemics.*
 - Hethcote, H. W. (2000). *The Mathematics of Infectious Diseases.*
 - Anderson, R. M., & May, R. M. (1991). *Infectious Diseases of Humans: Dynamics and Control.*
-- Centers for Disease Control and Prevention. Principles of Epidemiology in Public Health Practice.
+- Centers for Disease Control and Prevention. *Principles of Epidemiology in Public Health Practice.*
 """
     )
 
@@ -2263,11 +2154,17 @@ affect trends like peak infections, healthcare strain, and final outcomes.
 st.markdown("---")
 st.markdown(
     """
-### Epidemiological Decision Dashboard
+### SIRDV Epidemiological Decision Dashboard
 
-Built using **Python** and **Streamlit**  
-Created by **Omar Rulida Abdul-Rahman**  
-Portfolio project for epidemiological modeling, public health analytics, and interactive dashboard design.
+**Project title:** SIRDV Epidemiological Decision Dashboard  
+**Built using:** Python and Streamlit  
+**Name:** Omar Abdul-Rahman  
+
+GitHub: `Add GitHub link here`  
+LinkedIn: `Add LinkedIn link here`
 """
 )
-st.caption("SIRDV Epidemiological Decision Dashboard | Python + Streamlit")
+
+st.caption(
+    "Version 1.0 | For educational scenario exploration only. Not an official forecasting tool."
+)
