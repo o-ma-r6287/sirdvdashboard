@@ -844,6 +844,26 @@ def plot_download_buttons(fig, file_prefix):
     except Exception:
         st.info("PNG export needs `kaleido` in requirements.txt.")
 
+# ---------------------------------------------------
+# SIDEBAR NAVIGATION
+# ---------------------------------------------------
+st.sidebar.subheader("Dashboard Pages")
+page = st.sidebar.radio(
+    "Go to",
+    [
+        "Simulation Results",
+        "Data Table",
+        "Model Explanation",
+        "Compare Scenarios",
+        "Sensitivity Analysis",
+        "Day-by-Day View",
+        "Intervention Timing",
+        "Risk Heat Map",
+        "Methods & Assumptions",
+    ],
+    label_visibility="collapsed",
+)
+st.sidebar.markdown("---")
 
 # ---------------------------------------------------
 # SIDEBAR CONTROLS
