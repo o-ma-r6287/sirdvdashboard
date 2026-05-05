@@ -141,5 +141,5 @@ source venv/bin/activate
 venv\Scripts\activate
 
 pip install -r requirements.txt
-streamlit run app.py
+streamlit run SIRDVSTABDULRAHMAN.py
 ```
