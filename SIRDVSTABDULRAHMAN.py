@@ -66,6 +66,11 @@ st.title("🦠 SIRDV Epidemiological Decision Dashboard")
 st.caption("Version 1.0 | Interactive public health simulation for SIR / SIRD / SIRDV models")
 st.caption("Built by Omar Abdul-Rahman | Python + Streamlit")
 
+st.info(
+    "Start by selecting a preset scenario or adjust parameters in the sidebar, "
+    "then click **Run Simulation** to explore outcomes."
+)
+
 st.warning(
     "For educational scenario exploration only. This dashboard is not an official forecasting tool "
     "and should not be used for real-world public health decision-making without validated data and expert review."
@@ -82,6 +87,7 @@ session_defaults = {
     "sensitivity_results": None,
     "timing_results": None,
     "heatmap_results": None,
+    "auto_baseline_loaded": False,
 }
 
 for key, value in session_defaults.items():
@@ -849,11 +855,12 @@ if st.sidebar.button("Reset Dashboard"):
 mode = st.sidebar.radio("Interface Mode", ["Academic Mode", "Real-World Mode"])
 real_world_mode = mode == "Real-World Mode"
 
-guided_start = st.sidebar.checkbox("Start with a realistic baseline scenario", value=False)
+guided_start = st.sidebar.checkbox("Start with a realistic baseline scenario", value=True)
 
 preset = st.sidebar.selectbox(
     "Preset Scenario",
     ["Custom", "COVID-like", "Seasonal Flu", "High Vaccination", "Severe Outbreak"],
+    index=1 if guided_start else 0,
 )
 
 preset_values = {
@@ -923,7 +930,7 @@ if guided_start:
         "days": 120,
     }
 
-model_choice = st.sidebar.selectbox("Model Selection", ["SIR", "SIRD", "SIRDV"])
+model_choice = st.sidebar.selectbox("Model Selection", ["SIR", "SIRD", "SIRDV"], index=2)
 
 population = st.sidebar.number_input("Population", min_value=1, value=defaults["population"])
 infected = st.sidebar.number_input("Initial Infected", min_value=0, value=defaults["infected"])
@@ -1026,6 +1033,52 @@ run_button = st.sidebar.button("Run Simulation", type="primary", disabled=bool(e
 
 
 # ---------------------------------------------------
+# AUTO BASELINE ON FIRST LOAD
+# ---------------------------------------------------
+if (
+    guided_start
+    and not st.session_state.auto_baseline_loaded
+    and st.session_state.simulation_df is None
+    and not errors
+):
+    baseline_df = run_model_with_intervention(
+        model_choice,
+        population,
+        infected,
+        recovered,
+        beta,
+        gamma,
+        mu,
+        vac,
+        days,
+        intervention_enabled,
+        intervention_day,
+        reduced_beta,
+        increased_vac,
+    )
+
+    st.session_state.simulation_df = baseline_df
+    st.session_state.simulation_params = {
+        "model_choice": model_choice,
+        "population": population,
+        "infected": infected,
+        "recovered": recovered,
+        "beta": beta,
+        "gamma": gamma,
+        "mu": mu,
+        "vac": vac,
+        "hospitalization_rate": hospitalization_rate,
+        "icu_capacity": icu_capacity,
+        "days": days,
+        "intervention_enabled": intervention_enabled,
+        "intervention_day": intervention_day,
+        "reduced_beta": reduced_beta,
+        "increased_vac": increased_vac,
+    }
+    st.session_state.auto_baseline_loaded = True
+
+
+# ---------------------------------------------------
 # LANDING SECTION
 # ---------------------------------------------------
 st.markdown(
@@ -1119,10 +1172,15 @@ if run_button:
 # ---------------------------------------------------
 with tabs[0]:
     if st.session_state.simulation_df is None:
-        st.info("Choose parameters in the sidebar and click Run Simulation.")
+        st.info(
+            "Select a preset scenario or customize parameters in the sidebar, then click "
+            "**Run Simulation** to explore how interventions affect outbreak outcomes."
+        )
     else:
         df = st.session_state.simulation_df
         params = st.session_state.simulation_params
+
+        st.markdown("")
 
         plot_df = df.copy()
         y_axis_title = "Population"
@@ -1209,6 +1267,8 @@ with tabs[0]:
 
         st.markdown(f"**{bottom_line(metrics, params['icu_capacity'])}**")
 
+        st.markdown("---")
+
         st.subheader("Key Metrics")
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Peak % Infected", f"{metrics['Peak Infected %']:.1f}%")
@@ -1216,8 +1276,12 @@ with tabs[0]:
         c3.metric("Final Deaths", f"{metrics['Deaths']:,.0f}")
         c4.metric("ICU Breach Day", breach_day if breach_day is not None else "N/A")
 
+        st.markdown("")
+
         st.subheader("Simulation Dashboard")
         st.plotly_chart(fig, use_container_width=True)
+
+        st.markdown("")
 
         with st.container(border=True):
             st.markdown("### Structured Insight Box")
@@ -1240,6 +1304,8 @@ with tabs[0]:
 """
             )
 
+        st.markdown("")
+
         st.subheader("Healthcare Capacity Timeline")
         fig_health = make_healthcare_timeline(df, params["hospitalization_rate"], params["icu_capacity"], template)
         st.plotly_chart(fig_health, use_container_width=True)
@@ -1253,6 +1319,8 @@ with tabs[0]:
             i1.metric("Estimated Infections Prevented", f"{infections_prevented:,.0f}")
             i2.metric("Peak Reduction", f"{peak_reduction:,.0f}")
             i3.metric("Policy Effectiveness", f"{impact_score:.1f} / 100")
+
+        st.markdown("---")
 
         st.subheader("Policy Recommendation")
         if "Strong" in recommendation:
@@ -1305,6 +1373,8 @@ with tabs[0]:
             check1.metric("Expected Population", f"{params['population']:,.0f}")
             check2.metric("Maximum Population Drift", f"{max_drift:,.4f}")
 
+        st.markdown("---")
+
         st.subheader("Download Center")
         dl1, dl2, dl3, dl4 = st.columns(4)
 
@@ -1351,7 +1421,10 @@ with tabs[0]:
 # ---------------------------------------------------
 with tabs[1]:
     if st.session_state.simulation_df is None:
-        st.info("Run a simulation first to view the data table.")
+        st.info(
+            "Select a preset scenario or customize parameters in the sidebar, then click "
+            "**Run Simulation** to explore how interventions affect outbreak outcomes."
+        )
     else:
         st.subheader("Simulation Data")
         st.dataframe(st.session_state.simulation_df, use_container_width=True)
@@ -1407,6 +1480,11 @@ with tabs[3]:
     st.subheader("Compare Scenarios")
     st.caption("Use one-click presets or manually adjust Scenario A and Scenario B.")
 
+    demo_choice = st.selectbox(
+        "Comparison Quick Start",
+        ["Custom Comparison", "Early vs Late Intervention (Demo)"],
+    )
+
     scenario_presets = {
         "Baseline": {
             "beta_multiplier": 1.00,
@@ -1425,8 +1503,8 @@ with tabs[3]:
             "vac_boost": 0.02,
             "intervention_enabled": True,
             "intervention_day": min(15, days - 1),
-            "post_beta_multiplier": 0.50,
-            "post_vac_boost": 0.06,
+            "post_beta_multiplier": 0.45,
+            "post_vac_boost": 0.08,
         },
         "Late Response": {
             "beta_multiplier": 1.05,
@@ -1435,7 +1513,7 @@ with tabs[3]:
             "vac_boost": 0.00,
             "intervention_enabled": True,
             "intervention_day": min(60, days - 1),
-            "post_beta_multiplier": 0.75,
+            "post_beta_multiplier": 0.80,
             "post_vac_boost": 0.02,
         },
         "No Vaccination": {
@@ -1455,7 +1533,7 @@ with tabs[3]:
             "vac_boost": 0.10,
             "intervention_enabled": True,
             "intervention_day": min(10, days - 1),
-            "post_beta_multiplier": 0.55,
+            "post_beta_multiplier": 0.50,
             "post_vac_boost": 0.12,
         },
     }
@@ -1482,11 +1560,22 @@ with tabs[3]:
             "increased_vac": min(max(base_vac + config.get("post_vac_boost", 0.0), 0.0), 1.0),
         }
 
+    default_preset_a = "Early Intervention" if demo_choice == "Early vs Late Intervention (Demo)" else "Baseline"
+    default_preset_b = "Late Response" if demo_choice == "Early vs Late Intervention (Demo)" else "Early Intervention"
+
     col_preset_a, col_preset_b = st.columns(2)
     with col_preset_a:
-        preset_a = st.selectbox("Scenario A Preset", list(scenario_presets.keys()), index=0)
+        preset_a = st.selectbox(
+            "Scenario A Preset",
+            list(scenario_presets.keys()),
+            index=list(scenario_presets.keys()).index(default_preset_a),
+        )
     with col_preset_b:
-        preset_b = st.selectbox("Scenario B Preset", list(scenario_presets.keys()), index=1)
+        preset_b = st.selectbox(
+            "Scenario B Preset",
+            list(scenario_presets.keys()),
+            index=list(scenario_presets.keys()).index(default_preset_b),
+        )
 
     defaults_a = apply_comparison_preset(beta, gamma, mu, vac, preset_a)
     defaults_b = apply_comparison_preset(beta, gamma, mu, vac, preset_b)
@@ -1629,6 +1718,8 @@ with tabs[3]:
             )
 
         comparison_table = pd.DataFrame(comparison_rows)
+
+        st.markdown("---")
 
         st.subheader("Comparison Results Panel")
         st.dataframe(comparison_table, use_container_width=True)
@@ -1789,7 +1880,10 @@ with tabs[5]:
     st.subheader("Day-by-Day Outbreak View")
 
     if st.session_state.simulation_df is None:
-        st.info("Run a simulation first to use the day-by-day view.")
+        st.info(
+            "Select a preset scenario or customize parameters in the sidebar, then click "
+            "**Run Simulation** to explore how interventions affect outbreak outcomes."
+        )
     else:
         df = st.session_state.simulation_df
 
@@ -2160,8 +2254,8 @@ st.markdown(
 **Built using:** Python and Streamlit  
 **Name:** Omar Abdul-Rahman  
 
-GitHub: `https://github.com/o-ma-r6287`  
-LinkedIn: `https://www.linkedin.com/in/omar-abdul-rahman-19729323b/`
+GitHub: `Add GitHub link here`  
+LinkedIn: `Add LinkedIn link here`
 """
 )
 
