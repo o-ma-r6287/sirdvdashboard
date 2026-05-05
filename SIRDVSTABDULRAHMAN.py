@@ -864,9 +864,8 @@ page = st.sidebar.radio(
     label_visibility="collapsed",
 )
 st.sidebar.markdown("---")
-st.sidebar.caption("⬇️ Scroll for simulation controls")
-st.sidebar.markdown("---")
 st.sidebar.caption("Navigation ↑ | Controls ↓")
+st.sidebar.caption("⬇️ Scroll for simulation controls")
 # ---------------------------------------------------
 # SIDEBAR CONTROLS
 # ---------------------------------------------------
