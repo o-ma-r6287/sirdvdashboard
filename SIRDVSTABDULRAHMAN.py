@@ -263,18 +263,22 @@ def icu_status_text(df, hospitalization_rate, icu_capacity):
 
 def risk_level(metrics, icu_capacity):
     icu_exceeded = metrics["Estimated Peak Hospitalizations"] > icu_capacity
+    high_attack_rate = metrics["Attack Rate"] >= 70
+    moderate_attack_rate = metrics["Attack Rate"] >= 40
 
-    if icu_exceeded or metrics["R0"] >= 3.0 or metrics["Attack Rate"] >= 70:
-        return "⚫ Critical", "Critical Overload", "error"
+    if icu_exceeded:
+        return "⚫ Critical", "ICU capacity exceeded", "error"
 
-    if metrics["R0"] >= 2.0 or metrics["Attack Rate"] >= 40:
-        return "🔴 High", "Uncontrolled Spread", "warning"
+    if metrics["R0"] >= 3.0 or high_attack_rate:
+        return "⚫ Critical", "Critical outbreak pressure", "error"
+
+    if metrics["R0"] >= 2.0 or moderate_attack_rate:
+        return "🔴 High", "Uncontrolled spread", "warning"
 
     if metrics["R0"] > 1.0 or metrics["Attack Rate"] >= 15:
-        return "🟡 Moderate", "Elevated Transmission", "warning"
+        return "🟡 Moderate", "Elevated transmission", "warning"
 
-    return "🟢 Low", "Contained / Lower Risk", "success"
-
+    return "🟢 Low", "Contained / lower risk", "success"
 
 def readiness_grade(metrics, icu_capacity, vac):
     score = 100
@@ -302,26 +306,25 @@ def readiness_grade(metrics, icu_capacity, vac):
     score = max(min(score, 100), 0)
 
     if score >= 93:
-        return "A"
+    return "🟢 A (Excellent)"
     if score >= 90:
-        return "A-"
+    return "🟢 A- (Very Strong)"
     if score >= 87:
-        return "B+"
+    return "🟡 B+ (Strong)"
     if score >= 83:
-        return "B"
+    return "🟡 B (Good)"
     if score >= 80:
-        return "B-"
+    return "🟡 B- (Solid)"
     if score >= 77:
-        return "C+"
+    return "🟠 C+ (Moderate)"
     if score >= 73:
-        return "C"
+    return "🟠 C (Needs Improvement)"
     if score >= 70:
-        return "C-"
+    return "🟠 C- (Weak)"
     if score >= 60:
-        return "D"
+    return "🔴 D (Poor)"
 
-    return "F"
-
+    return "⚫ F (Critical Risk)"
 
 def policy_recommendation(metrics, icu_capacity):
     if metrics["Estimated Peak Hospitalizations"] > icu_capacity:
@@ -1256,12 +1259,15 @@ with tabs[0]:
         k1.metric("Risk Level", risk_label)
 
         # Row 2 (3 metrics in one row)
-        k2, k3, k4 = st.columns(3)
+        k2, k3 = st.columns(2)
         k2.metric("R₀", f"{metrics['R0']:.2f}")
         k3.metric("Peak Day", metrics["Day of Peak"])
+      
+        # Row 3 (long text gets full width)
+        k4 = st.columns(1)[0]
         k4.metric("ICU Status", icu_status)
-
-        # Row 3
+        
+        # Row 4
         k5 = st.columns(1)[0]
         k5.metric("Readiness Grade", grade)
 
