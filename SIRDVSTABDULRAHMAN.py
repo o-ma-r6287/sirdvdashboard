@@ -864,10 +864,13 @@ page = st.sidebar.radio(
     label_visibility="collapsed",
 )
 st.sidebar.markdown("---")
-
+st.sidebar.caption("⬇️ Scroll for simulation controls")
+st.sidebar.markdown("---")
+st.sidebar.caption("Navigation ↑ | Controls ↓")
 # ---------------------------------------------------
 # SIDEBAR CONTROLS
 # ---------------------------------------------------
+st.sidebar.markdown("---")
 st.sidebar.header("Simulation Controls")
 
 if st.sidebar.button("Reset Dashboard"):
@@ -1034,6 +1037,8 @@ show_percent = st.sidebar.toggle("Show chart as percentage", value=False)
 show_total_check = st.sidebar.toggle("Show population conservation check", value=True)
 show_cumulative = st.sidebar.toggle("Show cumulative cases curve", value=True)
 
+st.sidebar.markdown("---")
+st.sidebar.caption("Navigation ↑ | Controls ↓")
 # ---------------------------------------------------
 # VALIDATION
 # ---------------------------------------------------
