@@ -1,9 +1,9 @@
 import io
 import time
 import math
+import random
 import importlib.util
 from pathlib import Path
-import random
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -35,7 +35,7 @@ def load_run_sim():
         if file_path.exists():
             spec = importlib.util.spec_from_file_location(
                 "assignment3_functions",
-                file_path
+                file_path,
             )
             module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(module)
@@ -78,15 +78,6 @@ session_defaults = {
 for key, value in session_defaults.items():
     if key not in st.session_state:
         st.session_state[key] = value
-
-
-# ---------------------------------------------------
-# RESET DASHBOARD
-# ---------------------------------------------------
-if st.sidebar.button("Reset Dashboard"):
-    for key in session_defaults:
-        st.session_state[key] = None
-    st.rerun()
 
 
 # ---------------------------------------------------
@@ -213,14 +204,14 @@ def label_text(label, real_world_mode):
     if not real_world_mode:
         return label
 
-    labels = {
+    label_map = {
         "Beta (Infection Rate)": "Transmission Rate",
         "Gamma (Recovery Rate)": "Recovery Speed",
         "Mu (Death Rate)": "Mortality Pressure",
         "Vaccination Rate": "Vaccination Speed",
     }
 
-    return labels.get(label, label)
+    return label_map.get(label, label)
 
 
 # ---------------------------------------------------
@@ -277,6 +268,16 @@ def outbreak_phase(df):
         return "Emergence"
 
     return "Post-Peak Monitoring"
+
+
+def first_icu_crossing_day(df, hospitalization_rate, icu_capacity):
+    estimated_hospitalizations = df["Infected"] * hospitalization_rate
+    crossed = df.loc[estimated_hospitalizations > icu_capacity]
+
+    if crossed.empty:
+        return None
+
+    return int(crossed["Day"].iloc[0])
 
 
 def policy_recommendation(metrics, icu_capacity):
@@ -436,16 +437,6 @@ def executive_brief(metrics, phase, recommendation, grade):
         f"{metrics['Attack Rate']:.1f}%. The estimated R₀ is {metrics['R0']:.2f}, "
         f"and the public health readiness grade is {grade}. {recommendation}"
     )
-
-
-def first_icu_crossing_day(df, hospitalization_rate, icu_capacity):
-    estimated_hospitalizations = df["Infected"] * hospitalization_rate
-    crossed = df.loc[estimated_hospitalizations > icu_capacity]
-
-    if crossed.empty:
-        return None
-
-    return int(crossed["Day"].iloc[0])
 
 
 # ---------------------------------------------------
@@ -635,8 +626,8 @@ Days: {params["days"]}
 
 Intervention Enabled: {params["intervention_enabled"]}
 Intervention Day: {params["intervention_day"]}
-Post-Intervention Beta: {params["reduced_beta"]}
-Post-Intervention Vaccination Rate: {params["increased_vac"]}
+Post-Intervention Transmission: {params["reduced_beta"]}
+Post-Intervention Vaccination: {params["increased_vac"]}
 """
 
 
@@ -664,8 +655,8 @@ Days: {params["days"]}
 Intervention Settings:
 Intervention Enabled: {params["intervention_enabled"]}
 Intervention Day: {params["intervention_day"]}
-Post-Intervention Beta: {params["reduced_beta"]}
-Post-Intervention Vaccination Rate: {params["increased_vac"]}
+Post-Intervention Transmission: {params["reduced_beta"]}
+Post-Intervention Vaccination: {params["increased_vac"]}
 
 Key Results:
 Peak Infected: {metrics["Peak Infected"]:,.0f}
@@ -737,6 +728,11 @@ def plot_download_buttons(fig, model_choice):
 # SIDEBAR CONTROLS
 # ---------------------------------------------------
 st.sidebar.header("Simulation Controls")
+
+if st.sidebar.button("Reset Dashboard"):
+    for key in session_defaults:
+        st.session_state[key] = None
+    st.rerun()
 
 mode = st.sidebar.radio(
     "Interface Mode",
@@ -1686,13 +1682,14 @@ with tabs[4]:
                 )
             )
 
-        fig_sens.add_hline(
-            y=icu_capacity / hospitalization_rate if hospitalization_rate > 0 else icu_capacity,
-            line_dash="dash",
-            line_color="#f59e0b",
-            annotation_text="ICU-equivalent infected threshold",
-            annotation_position="top left",
-        )
+        if hospitalization_rate > 0:
+            fig_sens.add_hline(
+                y=icu_capacity / hospitalization_rate,
+                line_dash="dash",
+                line_color="#f59e0b",
+                annotation_text="ICU-equivalent infected threshold",
+                annotation_position="top left",
+            )
 
         fig_sens.update_layout(
             title=f"Sensitivity Analysis: {result['parameter']}",
@@ -1905,7 +1902,8 @@ with tabs[7]:
         ["Peak Infected", "Attack Rate", "Estimated Peak Hospitalizations"],
     )
 
-    grid_size = st.slider("Heat Map Detail", 5, 15, 9, 2)
+    num_heat_points = st.slider("Heat Map Smoothness", 150, 700, 400, 50)
+    spread = st.slider("Geographic Spread", 0.03, 0.15, 0.08, 0.01)
 
     if st.button("Generate Location Risk Heat Map", type="primary", disabled=bool(errors)):
         with st.spinner("Generating simulated local risk map..."):
@@ -1934,19 +1932,21 @@ with tabs[7]:
 
             heat_points = []
 
-            half = grid_size // 2
+            for _ in range(num_heat_points):
+                lat_offset = random.gauss(0, spread / 3)
+                lon_offset = random.gauss(0, spread / 3)
 
-            for i in range(-half, half + 1):
-                for j in range(-half, half + 1):
-                    distance = math.sqrt(i**2 + j**2)
-                    decay = max(0.15, 1 - (distance / (half + 1)))
-                    local_multiplier = 0.75 + ((i + half + 1) * (j + half + 1) % 7) / 20
-                    intensity = risk_base * decay * local_multiplier
+                distance = math.sqrt(lat_offset**2 + lon_offset**2)
+                decay = max(0.15, 1 - (distance / spread))
 
-                    lat = center_lat + i * 0.015
-                    lon = center_lon + j * 0.015
+                local_noise = random.uniform(0.7, 1.3)
 
-                    heat_points.append([lat, lon, intensity])
+                intensity = risk_base * decay * local_noise
+
+                lat = center_lat + lat_offset
+                lon = center_lon + lon_offset
+
+                heat_points.append([lat, lon, intensity])
 
             st.session_state.heatmap_results = {
                 "location": selected_location,
@@ -1975,8 +1975,8 @@ with tabs[7]:
 
             HeatMap(
                 result["points"],
-                radius=25,
-                blur=18,
+                radius=22,
+                blur=20,
                 max_zoom=13,
             ).add_to(fmap)
 
@@ -2000,7 +2000,7 @@ with tabs[7]:
                     lat=heat_df["lat"],
                     lon=heat_df["lon"],
                     z=heat_df["risk"],
-                    radius=25,
+                    radius=18,
                     colorscale="Reds",
                     name="Risk Intensity",
                 )
