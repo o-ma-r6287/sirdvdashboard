@@ -1,6 +1,6 @@
 # 🦠 SIRDV Epidemiological Decision Dashboard
 
-An interactive Streamlit dashboard for modeling infectious disease spread using SIR, SIRD, and SIRDV compartmental models.
+Interactive SIRDV-based epidemiological decision dashboard built in Python (Streamlit) for simulating outbreak dynamics, comparing intervention strategies, and analyzing healthcare system impact.
 
 ## Overview
 
