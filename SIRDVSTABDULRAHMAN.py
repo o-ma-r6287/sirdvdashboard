@@ -2160,8 +2160,8 @@ st.markdown(
 **Built using:** Python and Streamlit  
 **Name:** Omar Abdul-Rahman  
 
-GitHub: `Add GitHub link here`  
-LinkedIn: `Add LinkedIn link here`
+GitHub: `https://github.com/o-ma-r6287`  
+LinkedIn: `https://www.linkedin.com/in/omar-abdul-rahman-19729323b/`
 """
 )
 
