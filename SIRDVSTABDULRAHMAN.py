@@ -1034,25 +1034,6 @@ show_percent = st.sidebar.toggle("Show chart as percentage", value=False)
 show_total_check = st.sidebar.toggle("Show population conservation check", value=True)
 show_cumulative = st.sidebar.toggle("Show cumulative cases curve", value=True)
 
-st.sidebar.markdown("---")
-st.sidebar.subheader("Dashboard Pages")
-
-page = st.sidebar.radio(
-    "Go to",
-    [
-        "Simulation Results",
-        "Data Table",
-        "Model Explanation",
-        "Compare Scenarios",
-        "Sensitivity Analysis",
-        "Day-by-Day View",
-        "Intervention Timing",
-        "Risk Heat Map",
-        "Methods & Assumptions",
-    ],
-)
-
-
 # ---------------------------------------------------
 # VALIDATION
 # ---------------------------------------------------
