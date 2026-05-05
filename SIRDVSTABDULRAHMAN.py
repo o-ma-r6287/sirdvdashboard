@@ -1038,6 +1038,7 @@ show_cumulative = st.sidebar.toggle("Show cumulative cases curve", value=True)
 
 st.sidebar.markdown("---")
 st.sidebar.caption("Navigation ↑ | Controls ↓")
+st.sidebar.caption("⬆️ Scroll for navigation controls")
 # ---------------------------------------------------
 # VALIDATION
 # ---------------------------------------------------
