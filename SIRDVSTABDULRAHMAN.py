@@ -1036,9 +1036,6 @@ show_percent = st.sidebar.toggle("Show chart as percentage", value=False)
 show_total_check = st.sidebar.toggle("Show population conservation check", value=True)
 show_cumulative = st.sidebar.toggle("Show cumulative cases curve", value=True)
 
-st.sidebar.markdown("---")
-st.sidebar.caption("Navigation ↑ | Controls ↓")
-st.sidebar.caption("⬆️ Scroll for navigation controls")
 # ---------------------------------------------------
 # VALIDATION
 # ---------------------------------------------------
@@ -1058,7 +1055,9 @@ for error in errors:
 
 run_button = st.sidebar.button("Run Simulation", type="primary", disabled=bool(errors))
 
-
+st.sidebar.markdown("---")
+st.sidebar.caption("Navigation ↑ | Controls ↓")
+st.sidebar.caption("⬆️ Scroll for navigation controls")
 # ---------------------------------------------------
 # AUTO BASELINE ON FIRST LOAD
 # ---------------------------------------------------
