@@ -263,22 +263,21 @@ def icu_status_text(df, hospitalization_rate, icu_capacity):
 
 def risk_level(metrics, icu_capacity):
     icu_exceeded = metrics["Estimated Peak Hospitalizations"] > icu_capacity
-    high_attack_rate = metrics["Attack Rate"] >= 70
-    moderate_attack_rate = metrics["Attack Rate"] >= 40
 
     if icu_exceeded:
         return "⚫ Critical", "ICU capacity exceeded", "error"
 
-    if metrics["R0"] >= 3.0 or high_attack_rate:
+    if metrics["R0"] >= 3.0 or metrics["Attack Rate"] >= 70:
         return "⚫ Critical", "Critical outbreak pressure", "error"
 
-    if metrics["R0"] >= 2.0 or moderate_attack_rate:
+    if metrics["R0"] >= 2.0 or metrics["Attack Rate"] >= 40:
         return "🔴 High", "Uncontrolled spread", "warning"
 
     if metrics["R0"] > 1.0 or metrics["Attack Rate"] >= 15:
         return "🟡 Moderate", "Elevated transmission", "warning"
 
     return "🟢 Low", "Contained / lower risk", "success"
+
 
 def readiness_grade(metrics, icu_capacity, vac):
     score = 100
@@ -325,6 +324,7 @@ def readiness_grade(metrics, icu_capacity, vac):
         return "🔴 D (Poor)"
 
     return "⚫ F (Critical Risk)"
+
 
 def policy_recommendation(metrics, icu_capacity):
     if metrics["Estimated Peak Hospitalizations"] > icu_capacity:
@@ -564,8 +564,8 @@ def make_plot(
             y=icu_capacity,
             line_dash="dash",
             line_color="#f59e0b",
-            annotation_text="ICU Capacity",
-            annotation_position="top left",
+            annotation_text="ICU Limit",
+            annotation_position="bottom left",
         )
 
         if hospitalization_rate is not None:
@@ -575,8 +575,8 @@ def make_plot(
                     x=crossing_day,
                     line_dash="dot",
                     line_color="#f59e0b",
-                    annotation_text="ICU crossed",
-                    annotation_position="top right",
+                    annotation_text="ICU Limit",
+                    annotation_position="bottom left",
                 )
 
     if intervention_day is not None:
@@ -584,8 +584,8 @@ def make_plot(
             x=intervention_day,
             line_dash="dash",
             line_color="#22c55e",
-            annotation_text="Intervention begins",
-            annotation_position="top right",
+            annotation_text="A Start",
+            annotation_position="bottom right",
         )
 
     fig.update_layout(
@@ -622,8 +622,8 @@ def make_healthcare_timeline(df, hospitalization_rate, icu_capacity, template):
         y=icu_capacity,
         line_dash="dash",
         line_color="#f59e0b",
-        annotation_text="ICU Capacity",
-        annotation_position="top left",
+        annotation_text="ICU Limit",
+        annotation_position="bottom left",
     )
 
     fig.update_layout(
@@ -702,8 +702,8 @@ def make_overlay_comparison_plot(
             y=icu_capacity / hospitalization_rate,
             line_dash="dash",
             line_color="#f59e0b",
-            annotation_text="ICU Threshold",
-            annotation_position="top left",
+            annotation_text="ICU Limit",
+            annotation_position="bottom left",
         )
 
     if intervention_day_a is not None:
@@ -711,8 +711,8 @@ def make_overlay_comparison_plot(
             x=intervention_day_a,
             line_dash="dot",
             line_color="#22c55e",
-            annotation_text="Scenario A Intervention",
-            annotation_position="top left",
+            annotation_text="A Start",
+            annotation_position="bottom right",
         )
 
     if intervention_day_b is not None:
@@ -720,7 +720,7 @@ def make_overlay_comparison_plot(
             x=intervention_day_b,
             line_dash="dash",
             line_color="#16a34a",
-            annotation_text="Scenario B Intervention",
+            annotation_text="B Start",
             annotation_position="top right",
         )
 
@@ -1014,6 +1014,24 @@ show_percent = st.sidebar.toggle("Show chart as percentage", value=False)
 show_total_check = st.sidebar.toggle("Show population conservation check", value=True)
 show_cumulative = st.sidebar.toggle("Show cumulative cases curve", value=True)
 
+st.sidebar.markdown("---")
+st.sidebar.subheader("Dashboard Pages")
+
+page = st.sidebar.radio(
+    "Go to",
+    [
+        "Simulation Results",
+        "Data Table",
+        "Model Explanation",
+        "Compare Scenarios",
+        "Sensitivity Analysis",
+        "Day-by-Day View",
+        "Intervention Timing",
+        "Risk Heat Map",
+        "Methods & Assumptions",
+    ],
+)
+
 
 # ---------------------------------------------------
 # VALIDATION
@@ -1110,24 +1128,6 @@ It is best used to understand how changes in transmission, intervention timing, 
 
 
 # ---------------------------------------------------
-# TABS
-# ---------------------------------------------------
-tabs = st.tabs(
-    [
-        "Simulation Results",
-        "Data Table",
-        "Model Explanation",
-        "Compare Scenarios",
-        "Sensitivity Analysis",
-        "Day-by-Day View",
-        "Intervention Timing",
-        "Risk Heat Map",
-        "Methods & Assumptions",
-    ]
-)
-
-
-# ---------------------------------------------------
 # RUN MAIN SIMULATION
 # ---------------------------------------------------
 if run_button:
@@ -1171,9 +1171,9 @@ if run_button:
 
 
 # ---------------------------------------------------
-# TAB 1: SIMULATION RESULTS
+# PAGE 1: SIMULATION RESULTS
 # ---------------------------------------------------
-with tabs[0]:
+if page == "Simulation Results":
     if st.session_state.simulation_df is None:
         st.info(
             "Select a preset scenario or customize parameters in the sidebar, then click "
@@ -1257,19 +1257,28 @@ with tabs[0]:
         # Row 1
         k1 = st.columns(1)[0]
         k1.metric("Risk Level", risk_label)
+        st.caption(risk_description)
 
-        # Row 2 (3 metrics in one row)
+        st.markdown("")
+
+        # Row 2
         k2, k3 = st.columns(2)
         k2.metric("R₀", f"{metrics['R0']:.2f}")
         k3.metric("Peak Day", metrics["Day of Peak"])
-      
-        # Row 3 (long text gets full width)
+
+        st.markdown("")
+
+        # Row 3
         k4 = st.columns(1)[0]
         k4.metric("ICU Status", icu_status)
-        
+
+        st.markdown("")
+
         # Row 4
         k5 = st.columns(1)[0]
         k5.metric("Readiness Grade", grade)
+
+        st.markdown("")
 
         if risk_style == "error":
             st.error(brief)
@@ -1430,9 +1439,9 @@ with tabs[0]:
 
 
 # ---------------------------------------------------
-# TAB 2: DATA TABLE
+# PAGE 2: DATA TABLE
 # ---------------------------------------------------
-with tabs[1]:
+if page == "Data Table":
     if st.session_state.simulation_df is None:
         st.info(
             "Select a preset scenario or customize parameters in the sidebar, then click "
@@ -1454,9 +1463,9 @@ with tabs[1]:
 
 
 # ---------------------------------------------------
-# TAB 3: MODEL EXPLANATION
+# PAGE 3: MODEL EXPLANATION
 # ---------------------------------------------------
-with tabs[2]:
+if page == "Model Explanation":
     st.subheader("Model Explanation")
 
     st.markdown(
@@ -1487,9 +1496,9 @@ It is best used to understand how changes in transmission, intervention timing, 
 
 
 # ---------------------------------------------------
-# TAB 4: COMPARE SCENARIOS
+# PAGE 4: COMPARE SCENARIOS
 # ---------------------------------------------------
-with tabs[3]:
+if page == "Compare Scenarios":
     st.subheader("Compare Scenarios")
     st.caption("Use one-click presets or manually adjust Scenario A and Scenario B.")
 
@@ -1779,9 +1788,9 @@ with tabs[3]:
 
 
 # ---------------------------------------------------
-# TAB 5: SENSITIVITY ANALYSIS
+# PAGE 5: SENSITIVITY ANALYSIS
 # ---------------------------------------------------
-with tabs[4]:
+if page == "Sensitivity Analysis":
     st.subheader("Sensitivity Analysis")
     st.caption("Test how changing one parameter affects infection curves.")
 
@@ -1844,8 +1853,8 @@ with tabs[4]:
                 y=icu_capacity / hospitalization_rate,
                 line_dash="dash",
                 line_color="#f59e0b",
-                annotation_text="ICU-equivalent infected threshold",
-                annotation_position="top left",
+                annotation_text="ICU Limit",
+                annotation_position="bottom left",
             )
 
         fig_sens.update_layout(
@@ -1887,9 +1896,9 @@ with tabs[4]:
 
 
 # ---------------------------------------------------
-# TAB 6: DAY-BY-DAY VIEW
+# PAGE 6: DAY-BY-DAY VIEW
 # ---------------------------------------------------
-with tabs[5]:
+if page == "Day-by-Day View":
     st.subheader("Day-by-Day Outbreak View")
 
     if st.session_state.simulation_df is None:
@@ -1938,9 +1947,9 @@ with tabs[5]:
 
 
 # ---------------------------------------------------
-# TAB 7: INTERVENTION TIMING ANALYSIS
+# PAGE 7: INTERVENTION TIMING ANALYSIS
 # ---------------------------------------------------
-with tabs[6]:
+if page == "Intervention Timing":
     st.subheader("Intervention Timing Analysis")
     st.caption("Test how delaying intervention changes outbreak outcomes.")
 
@@ -2036,9 +2045,9 @@ with tabs[6]:
 
 
 # ---------------------------------------------------
-# TAB 8: RISK HEAT MAP
+# PAGE 8: RISK HEAT MAP
 # ---------------------------------------------------
-with tabs[7]:
+if page == "Risk Heat Map":
     st.subheader("Risk Heat Map")
     st.caption("Simulated local risk intensity based on the selected location and current model assumptions.")
 
@@ -2117,9 +2126,12 @@ with tabs[7]:
 
             HeatMap(result["points"], radius=22, blur=20, max_zoom=13).add_to(fmap)
 
-            folium.Marker(
-                [center_lat, center_lon],
-                tooltip=result["location"],
+            folium.CircleMarker(
+                location=[center_lat, center_lon],
+                radius=8,
+                color="red",
+                fill=True,
+                fill_opacity=0.8,
                 popup=f"{result['location']}<br>{result['metric']}: {result['risk_base']:,.2f}",
             ).add_to(fmap)
 
@@ -2167,9 +2179,9 @@ with tabs[7]:
 
 
 # ---------------------------------------------------
-# TAB 9: METHODS & ASSUMPTIONS
+# PAGE 9: METHODS & ASSUMPTIONS
 # ---------------------------------------------------
-with tabs[8]:
+if page == "Methods & Assumptions":
     st.subheader("Methods & Assumptions")
 
     st.markdown(
