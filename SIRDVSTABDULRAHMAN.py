@@ -1258,8 +1258,10 @@ with tabs[0]:
         k2.metric("R₀", f"{metrics['R0']:.2f}")
         k3.metric("Peak Day", metrics["Day of Peak"])
 
-        k4, k5 = st.columns(2)
+        k4 = st.columns(2)
         k4.metric("ICU Status", icu_status)
+
+        k5 = st.columns(1)[0]
         k5.metric("Readiness Grade", grade)
 
         if risk_style == "error":
