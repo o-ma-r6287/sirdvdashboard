@@ -1,5 +1,7 @@
 # 🦠 SIRDV Epidemiological Decision Dashboard
 
+https://sirdvdashboard.streamlit.app
+
 Interactive epidemiological simulation dashboard built with **Python** and **Streamlit** for exploring infectious disease dynamics, comparing intervention strategies, and analyzing healthcare system impact.
 
 ---
